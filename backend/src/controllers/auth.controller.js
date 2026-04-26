@@ -36,7 +36,7 @@ async function issueVerificationToken(userId) {
 }
 
 async function register(req, res, next) {
-  const { name, email, password } = req.body;
+  const { name, email, password, role = 'user' } = req.body;
 
   try {
     const existing = await pool.query('SELECT id FROM users WHERE email = $1;', [email.toLowerCase()]);
@@ -48,9 +48,9 @@ async function register(req, res, next) {
     const passwordHash = await bcrypt.hash(password, 10);
     const created = await pool.query(
       `INSERT INTO users (email, password_hash, first_name, last_name, role, is_verified)
-       VALUES ($1, $2, $3, $4, 'user', FALSE)
+       VALUES ($1, $2, $3, $4, $5, FALSE)
        RETURNING id, first_name, last_name, email, role, is_verified;`,
-      [email.toLowerCase(), passwordHash, firstName, lastName]
+      [email.toLowerCase(), passwordHash, firstName, lastName, role]
     );
 
     const user = created.rows[0];

@@ -136,27 +136,388 @@
       </div>
 
       @if (!hasSearched) {
+        <div class="crf-privacy-home">
+          <span class="crf-privacy-home-icon">🔒</span>
+          <p class="crf-privacy-home-text">
+            <strong>PRIVACY NOTICE:</strong> If you are not logged in, this app does <span class="crf-privacy-not-callout">NOT</span> track, does <span class="crf-privacy-not-callout">NOT</span> monitor, and does <span class="crf-privacy-not-callout">NOT</span> collect personal data.
+            Searches are only used to show results on screen. Saved items stay only on this device unless you choose to create account/login.
+            <span class="crf-privacy-alert">NO ADS. NO DATA SELLING.</span>
+          </p>
+        </div>
+
         <div class="crf-notice">
           <span class="crf-notice-icon">✅</span>
           <p class="crf-notice-text">
-            <strong>NO ACCOUNT NEEDED</strong> — browse and find resources freely.
+            <strong class="crf-no-account-callout">NO ACCOUNT NEEDED</strong> — browse and find resources freely.
             Want to submit updates or flag outdated info? An account unlocks those features.
           </p>
+          <div class="crf-notice-actions">
+            <button type="button" class="btn-create" (click)="openCreateAccount()">Create an account</button>
+            <button type="button" class="btn-login" (click)="openLogin()">Log in</button>
+          </div>
         </div>
       }
 
-      <div class="crf-auth-row">
-        <button type="button" class="btn-create" (click)="openCreateAccount()">Create an account</button>
-        <button type="button" class="btn-login" (click)="openLogin()">Log in</button>
+    </section>
+  } @else if (viewMode === 'userDashboard') {
+    <section class="rr-wrap">
+      <div class="rr-top-title" (click)="handleTopTitleClick()">Community Resource Finder</div>
+
+      <div class="rr-header">
+        <div class="rr-breadcrumb">
+          <p class="rr-breadcrumb-title">ASH User Dashboard</p>
+          <p class="rr-breadcrumb-sub">Signed in as {{ currentUser?.name || currentUser?.email }}</p>
+        </div>
       </div>
 
+      <article class="rr-card dashboard-card">
+        <div class="rr-card-body">
+          <p class="rr-card-name">Account</p>
+          <p class="rr-card-hours"><strong>Email:</strong> {{ currentUser?.email }}</p>
+          <p class="rr-card-hours"><strong>Role:</strong> {{ currentUser?.role }}</p>
+          <p class="rr-card-hours"><strong>Saved resources:</strong> {{ savedResources.length }}</p>
+          <p class="rr-card-hours"><strong>Recent searches:</strong> {{ recentSearches.length }}</p>
+          @if (authMessage) {
+            <p class="rr-form-success">{{ authMessage }}</p>
+          }
+        </div>
+        <div class="rr-card-right">
+          <button type="button" class="rr-save-btn" (click)="openSavedResources()">Open saved list</button>
+          <button type="button" class="rr-save-btn" [disabled]="isSyncingSaved" (click)="syncSavedResourcesFromServer()">
+            {{ isSyncingSaved ? 'Syncing...' : 'Sync saved to account' }}
+          </button>
+          <button type="button" class="rr-save-btn" (click)="goHome()">Find resources</button>
+        </div>
+      </article>
+
+      <article class="rr-card dashboard-card">
+        <div class="rr-card-body">
+          <p class="rr-card-name">Location Services (Optional)</p>
+          <p class="rr-card-hours">
+            Turn this on only if you want distance estimates in results. Your location is not stored.
+          </p>
+          @if (locationStatusMessage) {
+            <p class="rr-location-status">{{ locationStatusMessage }}</p>
+          }
+        </div>
+        <div class="rr-card-right">
+          <button class="rr-location-btn" (click)="requestCurrentLocation()" [disabled]="isRequestingLocation">
+            {{ isRequestingLocation ? 'Locating...' : 'Enable location' }}
+          </button>
+          @if (userLocation) {
+            <button class="rr-location-btn secondary" (click)="clearCurrentLocation()">Hide distance</button>
+          }
+        </div>
+      </article>
+
+      <article class="rr-card dashboard-card">
+        <div class="rr-card-body">
+          <p class="rr-card-name">Flag Outdated Resources</p>
+          <p class="rr-card-hours">
+            Open any resource result card and click <strong>Flag resource</strong> to send it for admin review.
+          </p>
+        </div>
+      </article>
+
+      <div class="ash-logout-row">
+        <button type="button" class="ash-logout-btn" (click)="logout()">Log out</button>
+      </div>
+    </section>
+  } @else if (viewMode === 'login') {
+    <section class="auth-screen">
+      <div class="auth-page-nav">
+        <button type="button" class="back-link as-button" (click)="goHome()">← Back to home</button>
+      </div>
+      <div class="auth-card">
+        <div class="auth-logo">
+          <p class="auth-eyebrow">Community Resource Finder</p>
+          <h1 class="auth-title">Welcome back</h1>
+          <p class="auth-sub">Sign in to access your saved resources</p>
+        </div>
+
+        <div class="auth-form">
+          <div class="role-toggle" aria-label="Login type">
+            <button
+              type="button"
+              class="role-option"
+              [class.active]="loginRole === 'user'"
+              (click)="loginRole = 'user'"
+            >
+              User login
+            </button>
+            <button
+              type="button"
+              class="role-option"
+              [class.active]="loginRole === 'admin'"
+              (click)="loginRole = 'admin'"
+            >
+              Admin login
+            </button>
+          </div>
+
+          <div class="field-wrap">
+            <span class="field-label">Email address</span>
+            <div class="field-input">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9FE1CB" stroke-width="2">
+                <rect x="2" y="4" width="20" height="16" rx="2" />
+                <polyline points="2,4 12,13 22,4" />
+              </svg>
+              <input
+                type="email"
+                placeholder="you@email.com"
+                autocomplete="email"
+                [(ngModel)]="loginEmail"
+              />
+            </div>
+          </div>
+
+          <div class="field-wrap">
+            <span class="field-label">Password</span>
+            <div class="field-input">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9FE1CB" stroke-width="2">
+                <rect x="3" y="11" width="18" height="11" rx="2" />
+                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+              </svg>
+              <input
+                type="password"
+                placeholder="••••••••"
+                autocomplete="current-password"
+                [(ngModel)]="loginPassword"
+                (keyup.enter)="submitLogin()"
+              />
+            </div>
+          </div>
+
+          <div class="forgot-row">
+            <button type="button" class="auth-link as-button" (click)="openForgotPassword()">Forgot password?</button>
+          </div>
+
+          @if (loginError) {
+            <p class="rr-form-error">{{ loginError }}</p>
+          }
+          @if (loginSuccess) {
+            <p class="rr-form-success">{{ loginSuccess }}</p>
+          }
+
+          <button class="btn-primary" [disabled]="isLoggingIn" (click)="submitLogin()">
+            {{ isLoggingIn ? 'Signing in...' : 'Sign in' }}
+          </button>
+
+          <div class="auth-divider">
+            <div class="auth-divider-line"></div>
+            <span class="auth-divider-text">or</span>
+            <div class="auth-divider-line"></div>
+          </div>
+
+          <p class="auth-link-row">
+            Don't have an account?
+            <button type="button" class="auth-link auth-link-lg as-button" (click)="openCreateAccount()">
+              Create one - it's free
+            </button>
+          </p>
+
+          <div class="privacy-pill">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#7F77DD" stroke-width="2" style="flex-shrink:0; margin-top:1px;">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+            </svg>
+            <p class="privacy-text">
+              <strong>No tracking.</strong> Your account is only used to save update requests - we never sell your data.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+  } @else if (viewMode === 'forgotPassword') {
+    <section class="auth-screen">
+      <div class="auth-page-nav">
+        <button type="button" class="back-link as-button" (click)="backToLogin()">← Back to login</button>
+      </div>
+      <div class="auth-card">
+        <div class="auth-logo">
+          <p class="auth-eyebrow">Community Resource Finder</p>
+          <h1 class="auth-title">Reset your password</h1>
+          <p class="auth-sub">We'll send a reset link to your email</p>
+        </div>
+
+        <div class="auth-form">
+          <div class="field-wrap">
+            <span class="field-label">Email address</span>
+            <div class="field-input">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9FE1CB" stroke-width="2">
+                <rect x="2" y="4" width="20" height="16" rx="2" />
+                <polyline points="2,4 12,13 22,4" />
+              </svg>
+              <input
+                type="email"
+                placeholder="you@email.com"
+                autocomplete="email"
+                [(ngModel)]="forgotPasswordEmail"
+                (keyup.enter)="submitForgotPassword()"
+              />
+            </div>
+          </div>
+
+          @if (forgotPasswordError) {
+            <p class="rr-form-error">{{ forgotPasswordError }}</p>
+          }
+
+          <button class="btn-primary" [disabled]="isSendingResetLink" (click)="submitForgotPassword()">
+            {{ isSendingResetLink ? 'Sending...' : 'Send reset link' }}
+          </button>
+
+          @if (forgotPasswordSuccess) {
+            <div class="success-box">
+              <div class="check-circle">✓</div>
+              <p class="success-text">
+                <strong>Check your inbox.</strong> If an account exists for that email, you'll receive a reset link within a few minutes. Don't forget to check your spam folder.
+              </p>
+            </div>
+          }
+
+          <div class="privacy-pill">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#7F77DD" stroke-width="2" style="flex-shrink:0; margin-top:1px;">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+            </svg>
+            <p class="privacy-text">
+              <strong>Your privacy is protected.</strong> We won't confirm whether an email is registered to protect your account security.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+  } @else if (viewMode === 'register') {
+    <section class="auth-screen">
+      <div class="auth-page-nav">
+        <button type="button" class="back-link as-button" (click)="goHome()">← Back to home</button>
+      </div>
+      <div class="auth-card">
+        <div class="auth-logo">
+          <p class="auth-eyebrow">Community Resource Finder</p>
+          <h1 class="auth-title">Create your account</h1>
+          <p class="auth-sub">Free - submit resource updates and flag outdated info</p>
+        </div>
+
+        <div class="auth-form">
+          <div class="role-toggle" aria-label="Account type">
+            <button
+              type="button"
+              class="role-option"
+              [class.active]="registerRole === 'user'"
+              (click)="registerRole = 'user'"
+            >
+              Register as User
+            </button>
+            <button
+              type="button"
+              class="role-option"
+              [class.active]="registerRole === 'admin'"
+              (click)="registerRole = 'admin'"
+            >
+              Register as Admin
+            </button>
+          </div>
+
+          <div class="name-row">
+            <div class="field-wrap">
+              <span class="field-label">First name</span>
+              <div class="field-input">
+                <input type="text" placeholder="First" autocomplete="given-name" [(ngModel)]="registerFirstName" />
+              </div>
+            </div>
+            <div class="field-wrap">
+              <span class="field-label">Last name</span>
+              <div class="field-input">
+                <input type="text" placeholder="Last" autocomplete="family-name" [(ngModel)]="registerLastName" />
+              </div>
+            </div>
+          </div>
+
+          <div class="field-wrap">
+            <span class="field-label">Email address</span>
+            <div class="field-input">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9FE1CB" stroke-width="2">
+                <rect x="2" y="4" width="20" height="16" rx="2" />
+                <polyline points="2,4 12,13 22,4" />
+              </svg>
+              <input type="email" placeholder="you@email.com" autocomplete="email" [(ngModel)]="registerEmail" />
+            </div>
+          </div>
+
+          <div class="field-wrap">
+            <span class="field-label">Password</span>
+            <div class="field-input">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9FE1CB" stroke-width="2">
+                <rect x="3" y="11" width="18" height="11" rx="2" />
+                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+              </svg>
+              <input
+                type="password"
+                placeholder="Min. 8 characters"
+                autocomplete="new-password"
+                [(ngModel)]="registerPassword"
+              />
+            </div>
+          </div>
+
+          <div class="field-wrap">
+            <span class="field-label">Confirm password</span>
+            <div class="field-input">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9FE1CB" stroke-width="2">
+                <rect x="3" y="11" width="18" height="11" rx="2" />
+                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+              </svg>
+              <input
+                type="password"
+                placeholder="Repeat password"
+                autocomplete="new-password"
+                [(ngModel)]="registerConfirmPassword"
+                (keyup.enter)="submitRegister()"
+              />
+            </div>
+          </div>
+
+          @if (registerError) {
+            <p class="rr-form-error">{{ registerError }}</p>
+          }
+          @if (registerSuccess) {
+            <p class="rr-form-success">{{ registerSuccess }}</p>
+          }
+
+          <button class="btn-primary" [disabled]="isRegistering" (click)="submitRegister()">
+            {{ isRegistering ? 'Creating account...' : 'Create account' }}
+          </button>
+
+          <p class="terms-text">
+            By creating an account you agree to our Terms of Service and Privacy Policy. No spam, ever.
+          </p>
+
+          <div class="privacy-pill">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#7F77DD" stroke-width="2" style="flex-shrink:0; margin-top:1px;">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+            </svg>
+            <p class="privacy-text">
+              <strong>No tracking, no data selling.</strong> Your account is only used to manage resource update requests.
+            </p>
+          </div>
+
+          <div class="auth-divider">
+            <div class="auth-divider-line"></div>
+            <span class="auth-divider-text">already have an account?</span>
+            <div class="auth-divider-line"></div>
+          </div>
+
+          <p class="auth-link-row">
+            <button type="button" class="auth-link as-button" (click)="openLogin()">Sign in instead</button>
+          </p>
+        </div>
+      </div>
     </section>
   } @else if (viewMode === 'savedResources') {
     <section class="rr-wrap">
-      <div class="rr-top-title" (click)="goHome()">Community Resource Finder</div>
+      <div class="rr-top-title" (click)="handleTopTitleClick()">Community Resource Finder</div>
 
       <div class="rr-header">
-        <button type="button" class="rr-back" (click)="backToLanding()">← Back</button>
+        <button type="button" class="rr-back" (click)="goHome()">← Home</button>
         <div class="rr-breadcrumb">
           <p class="rr-breadcrumb-title">Saved Resources</p>
           <p class="rr-breadcrumb-sub rr-saved-note">
@@ -235,6 +596,9 @@
             </div>
 
             <div class="rr-card-right">
+              @if (userLocation) {
+                <span class="rr-distance">{{ getDistanceLabel(resource) }}</span>
+              }
               <a
                 class="rr-map-link"
                 [href]="getGoogleMapsUrl(resource)"
@@ -246,17 +610,41 @@
                 <span class="rr-map-link-text">Go to Google Maps</span>
               </a>
               <button type="button" class="rr-save-btn" (click)="toggleSaveResource(resource)">Unsave</button>
+              @if (currentUser?.role === 'user') {
+                <button type="button" class="rr-save-btn rr-flag-btn" (click)="openFlagResource(resource.id)">
+                  Flag resource
+                </button>
+              }
             </div>
+            @if (flaggingResourceId === resource.id) {
+              <div class="rr-flag-form">
+                <textarea
+                  [(ngModel)]="flagReason"
+                  rows="3"
+                  placeholder="What is outdated or incorrect about this resource?"
+                ></textarea>
+                @if (flagError) {
+                  <p class="rr-form-error">{{ flagError }}</p>
+                }
+                @if (flagSuccess) {
+                  <p class="rr-form-success">{{ flagSuccess }}</p>
+                }
+                <div class="rr-flag-actions">
+                  <button type="button" class="rr-submit-btn" (click)="submitFlagResource(resource)">Submit flag</button>
+                  <button type="button" class="rr-save-btn" (click)="cancelFlagResource()">Cancel</button>
+                </div>
+              </div>
+            }
           </article>
         }
       </div>
     </section>
   } @else {
     <section class="rr-wrap">
-      <div class="rr-top-title" (click)="goHome()">Community Resource Finder</div>
+      <div class="rr-top-title" (click)="handleTopTitleClick()">Community Resource Finder</div>
 
       <div class="rr-header">
-        <button type="button" class="rr-back" (click)="backToLanding()">← Back</button>
+        <button type="button" class="rr-back" (click)="goHome()">← Home</button>
 
         <div class="rr-breadcrumb">
           <p class="rr-breadcrumb-title">{{ selectedCategoryLabel }} Resources</p>
@@ -294,7 +682,21 @@
         <button class="rr-zip-btn" (click)="searchByZip()" [disabled]="isLoading">
           {{ isLoading ? 'Searching...' : 'Search' }}
         </button>
+
+        @if (currentUser?.role === 'user') {
+          <button class="rr-location-btn" (click)="requestCurrentLocation()" [disabled]="isRequestingLocation">
+            {{ isRequestingLocation ? 'Locating...' : 'Use my location (optional)' }}
+          </button>
+
+          @if (userLocation) {
+            <button class="rr-location-btn secondary" (click)="clearCurrentLocation()">Hide distance</button>
+          }
+        }
       </div>
+
+      @if (currentUser?.role === 'user' && locationStatusMessage) {
+        <p class="rr-location-status">{{ locationStatusMessage }}</p>
+      }
 
       <div class="rr-privacy-notice">
         <span class="rr-privacy-icon">🔒</span>
@@ -430,6 +832,9 @@
     </div>
 
             <div class="rr-card-right">
+              @if (userLocation) {
+                <span class="rr-distance">{{ getDistanceLabel(resource) }}</span>
+              }
               <a
                 class="rr-map-link"
                 [href]="getGoogleMapsUrl(resource)"
@@ -443,7 +848,31 @@
               <button type="button" class="rr-save-btn" (click)="toggleSaveResource(resource)">
                 {{ isSavedResource(resource.id) ? 'Unsave' : 'Save' }}
               </button>
+              @if (currentUser?.role === 'user') {
+                <button type="button" class="rr-save-btn rr-flag-btn" (click)="openFlagResource(resource.id)">
+                  Flag resource
+                </button>
+              }
             </div>
+            @if (flaggingResourceId === resource.id) {
+              <div class="rr-flag-form">
+                <textarea
+                  [(ngModel)]="flagReason"
+                  rows="3"
+                  placeholder="What is outdated or incorrect about this resource?"
+                ></textarea>
+                @if (flagError) {
+                  <p class="rr-form-error">{{ flagError }}</p>
+                }
+                @if (flagSuccess) {
+                  <p class="rr-form-success">{{ flagSuccess }}</p>
+                }
+                <div class="rr-flag-actions">
+                  <button type="button" class="rr-submit-btn" (click)="submitFlagResource(resource)">Submit flag</button>
+                  <button type="button" class="rr-save-btn" (click)="cancelFlagResource()">Cancel</button>
+                </div>
+              </div>
+            }
           </article>
         }
 

@@ -16,6 +16,7 @@ router.post(
     body('name').trim().isLength({ min: 2, max: 120 }),
     body('email').isEmail().normalizeEmail(),
     body('password').isLength({ min: 8, max: 128 }),
+    body('role').optional().isIn(['user', 'admin']),
     validateRequest,
   ],
   register
