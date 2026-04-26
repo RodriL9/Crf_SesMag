@@ -1,0 +1,464 @@
+<main class="landing-page">
+  @if (viewMode === 'landing') {
+    <section class="crf-wrap">
+      <div class="crf-hero">
+        <p class="crf-eyebrow">Free · No Login Required</p>
+        <h1 class="crf-title" (click)="goHome()">Community Resource Finder</h1>
+        <p class="crf-subtitle">Find help near you across food, health, housing & more</p>
+      </div>
+
+      @if (isOffline) {
+        <div class="offline-banner" role="status" aria-live="polite">
+          You are offline. Saved resources will still work. Search requires connection, and maps will not load offline.
+        </div>
+      }
+
+      <div class="crf-search-row">
+        <div class="crf-search-box">
+          <svg class="crf-search-icon" viewBox="0 0 24 24" fill="none" stroke="#1D9E75" stroke-width="2" stroke-linecap="round">
+            <circle cx="11" cy="11" r="7" />
+            <line x1="16.5" y1="16.5" x2="22" y2="22" />
+          </svg>
+
+          <input
+            type="text"
+            maxlength="80"
+            [(ngModel)]="searchInput"
+            placeholder="Search by ZIP code or city..."
+            aria-label="Search by ZIP code or city"
+            (keyup.enter)="searchByZip()"
+          />
+
+          <button type="button" class="crf-search-btn" (click)="searchByZip()" [disabled]="isLoading">
+            {{ isLoading ? 'Searching...' : 'Search' }}
+          </button>
+        </div>
+
+        <div class="crf-recents-wrap">
+          <button type="button" class="crf-recent-btn" (click)="openRecents()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#378ADD" stroke-width="2" stroke-linecap="round">
+              <circle cx="12" cy="12" r="10" />
+              <polyline points="12 6 12 12 15 15" />
+            </svg>
+            Recents
+          </button>
+
+          @if (showRecentsPanel) {
+            <div class="crf-recents-panel">
+              @if (recentSearches.length === 0) {
+                <p>No recent searches yet.</p>
+              } @else {
+                @for (term of recentSearches; track term) {
+                  <button type="button" class="crf-recent-item" (click)="useRecentSearch(term)">
+                    {{ term }}
+                  </button>
+                }
+              }
+            </div>
+          }
+        </div>
+
+        <button type="button" class="crf-recent-btn rr-saved-entry" (click)="openSavedResources()">
+          Saved resources ({{ savedResources.length }})
+        </button>
+      </div>
+
+      @if (errorMessage) {
+        <p class="crf-error">{{ errorMessage }}</p>
+      }
+
+      @if (hasSearched && !isLoading && allResults.length > 0) {
+        <div class="crf-results-summary">
+          <p><strong>Results for {{ lastSearchTerm }}</strong> ({{ resolvedCityName }}):</p>
+          <p>Click on desired type of resource for "{{ resolvedCityName }}" below.</p>
+        </div>
+      }
+
+      @if (hasSearched && !isLoading && allResults.length === 0) {
+        <div class="rr-empty-search-notice">
+          <p><strong>Zip code/city not stored in database.</strong></p>
+          <p>Would you like to suggest a resource?</p>
+          @if (!showSuggestionForm) {
+            <p class="rr-anon-note"><strong>This is completely anonymous.</strong> No login or personal tracking required.</p>
+            <button type="button" class="rr-suggest-btn" (click)="showSuggestResourcePrompt()">Suggest a resource</button>
+          } @else {
+            <section class="rr-suggest-form">
+              <h3>Suggest a Resource</h3>
+              <p class="rr-suggest-sub">Admin will review your suggestion before publishing.</p>
+
+              <div class="rr-form-row">
+                <input [(ngModel)]="suggestionForm.zipOrCity" type="text" placeholder="Zip code or city" />
+              </div>
+
+              <div class="rr-form-row rr-type-row">
+                @for (category of categories; track category.id) {
+                  <button
+                    type="button"
+                    class="rr-type-choice"
+                    [class.selected]="suggestionForm.categoryId === category.id"
+                    (click)="setSuggestionCategory(category.id)"
+                  >
+                    {{ category.icon }} {{ category.label }}
+                  </button>
+                }
+              </div>
+
+              <textarea [(ngModel)]="suggestionForm.notes" rows="3" placeholder="Anything else admin should know?"></textarea>
+
+              @if (submissionError) {
+                <p class="rr-form-error">{{ submissionError }}</p>
+              }
+              @if (submissionSuccess) {
+                <p class="rr-form-success">{{ submissionSuccess }}</p>
+              }
+
+              <button type="button" class="rr-submit-btn" [disabled]="isSubmittingSuggestion" (click)="submitSuggestion()">
+                {{ isSubmittingSuggestion ? 'Submitting...' : 'Submit suggestion' }}
+              </button>
+            </section>
+          }
+        </div>
+      }
+
+      <div class="crf-grid">
+        @for (category of categories; track category.label) {
+          <button
+            type="button"
+            class="crf-card {{ category.className }}"
+            [class.selected]="selectedCategoryId === category.id"
+            (click)="openCategory(category.label, category.id)"
+          >
+            <span class="crf-card-icon">{{ category.icon }}</span>
+            <span class="crf-card-label">{{ category.label }}</span>
+            <span class="crf-card-sub">{{ category.sub }}</span>
+          </button>
+        }
+      </div>
+
+      @if (!hasSearched) {
+        <div class="crf-notice">
+          <span class="crf-notice-icon">✅</span>
+          <p class="crf-notice-text">
+            <strong>NO ACCOUNT NEEDED</strong> — browse and find resources freely.
+            Want to submit updates or flag outdated info? An account unlocks those features.
+          </p>
+        </div>
+      }
+
+      <div class="crf-auth-row">
+        <button type="button" class="btn-create" (click)="openCreateAccount()">Create an account</button>
+        <button type="button" class="btn-login" (click)="openLogin()">Log in</button>
+      </div>
+
+    </section>
+  } @else if (viewMode === 'savedResources') {
+    <section class="rr-wrap">
+      <div class="rr-top-title" (click)="goHome()">Community Resource Finder</div>
+
+      <div class="rr-header">
+        <button type="button" class="rr-back" (click)="backToLanding()">← Back</button>
+        <div class="rr-breadcrumb">
+          <p class="rr-breadcrumb-title">Saved Resources</p>
+          <p class="rr-breadcrumb-sub rr-saved-note">
+            Saved only in this browser on this device. Nothing is shared, and you can unsave anytime.
+          </p>
+        </div>
+      </div>
+
+      @if (isOffline) {
+        <div class="offline-banner" role="status" aria-live="polite">
+          You are offline. Saved resources will still work. Search requires connection, and maps will not load offline.
+        </div>
+      }
+
+      <div class="rr-cards">
+        @if (savedResources.length === 0) {
+          <article class="rr-card rr-empty">
+            <p>You have no saved resources yet. Search and tap "Save" on any resource card.</p>
+          </article>
+        }
+
+        @for (resource of savedResources; track resource.id; let i = $index) {
+          <article class="rr-card">
+            <div class="rr-card-icon-wrap">{{ getResultIcon(i) }}</div>
+
+            <div class="rr-card-body">
+              <p class="rr-card-name">{{ resource.name }}</p>
+              <button
+                type="button"
+                class="rr-card-address"
+                (click)="toggleResourceDetails(resource.id)"
+              >
+                <span class="rr-address-main">📍 {{ resource.address }}, {{ resource.city || 'NJ' }}, {{ resource.state || 'NJ' }}</span>
+                <span class="rr-see-details">{{ expandedResourceId === resource.id ? 'Hide details' : 'See details' }}</span>
+              </button>
+
+              <div class="rr-card-tags">
+                @for (tag of getResourceTags(resource); track tag.label) {
+                  <span class="rr-tag {{ tag.className }}">{{ tag.label }}</span>
+                }
+              </div>
+
+              <p class="rr-card-hours">{{ getHoursLine(resource) }}</p>
+
+              @if (expandedResourceId === resource.id) {
+                <div class="rr-card-details">
+                  @if (isOffline) {
+                    <p class="rr-offline-map-note">Map unavailable offline.</p>
+                  } @else {
+                    <div class="rr-map-embed-wrap">
+                      <iframe
+                        class="rr-map-embed"
+                        [src]="getGoogleMapsEmbedUrl(resource)"
+                        loading="lazy"
+                        referrerpolicy="no-referrer-when-downgrade"
+                        title="Resource location map"
+                      ></iframe>
+                    </div>
+                  }
+
+                  @if (resource.website) {
+                    <p><strong>Website:</strong> <a [href]="resource.website" target="_blank" rel="noopener noreferrer">{{ resource.website }}</a> <span class="rr-external-inline">(opens external site)</span></p>
+                  } @else {
+                    <p><strong>Website:</strong> Not listed</p>
+                  }
+
+                  <p>
+                    <strong>Map:</strong>
+                    <a [href]="getGoogleMapsUrl(resource)" target="_blank" rel="noopener noreferrer">
+                      Open in Google Maps
+                    </a>
+                    <span class="rr-external-inline">(opens external map app/site)</span>
+                  </p>
+                </div>
+              }
+            </div>
+
+            <div class="rr-card-right">
+              <a
+                class="rr-map-link"
+                [href]="getGoogleMapsUrl(resource)"
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Open in Google Maps"
+              >
+                <span class="rr-pin">📍</span>
+                <span class="rr-map-link-text">Go to Google Maps</span>
+              </a>
+              <button type="button" class="rr-save-btn" (click)="toggleSaveResource(resource)">Unsave</button>
+            </div>
+          </article>
+        }
+      </div>
+    </section>
+  } @else {
+    <section class="rr-wrap">
+      <div class="rr-top-title" (click)="goHome()">Community Resource Finder</div>
+
+      <div class="rr-header">
+        <button type="button" class="rr-back" (click)="backToLanding()">← Back</button>
+
+        <div class="rr-breadcrumb">
+          <p class="rr-breadcrumb-title">{{ selectedCategoryLabel }} Resources</p>
+          <p class="rr-breadcrumb-sub">{{ getLocationSubtitle() }}</p>
+        </div>
+
+        <button type="button" class="rr-back rr-saved-entry" (click)="openSavedResources()">
+          Saved ({{ savedResources.length }})
+        </button>
+        <div class="rr-type-pill">{{ selectedCategory?.icon }} {{ selectedCategoryLabel }}</div>
+      </div>
+
+      @if (isOffline) {
+        <div class="offline-banner" role="status" aria-live="polite">
+          You are offline. Saved resources will still work. Search requires connection, and maps will not load offline.
+        </div>
+      }
+
+      <div class="rr-zip-bar">
+        <div class="rr-zip-input-wrap">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9FE1CB" stroke-width="2">
+            <circle cx="11" cy="11" r="7" />
+            <line x1="16.5" y1="16.5" x2="22" y2="22" />
+          </svg>
+
+          <input
+            type="text"
+            maxlength="80"
+            [(ngModel)]="searchInput"
+            placeholder="Enter zip code/city name to get resources"
+            (keyup.enter)="searchByZip()"
+          />
+        </div>
+
+        <button class="rr-zip-btn" (click)="searchByZip()" [disabled]="isLoading">
+          {{ isLoading ? 'Searching...' : 'Search' }}
+        </button>
+      </div>
+
+      <div class="rr-privacy-notice">
+        <span class="rr-privacy-icon">🔒</span>
+        <p class="rr-privacy-text">
+          <strong>Your location is never stored or shared.</strong>
+          We only use
+          <strong>{{ lastSearchTerm || 'the zip code/city entered' }}</strong>
+          to find resources. No tracking, no account required.
+        </p>
+      </div>
+
+      @if (errorMessage) {
+        <p class="crf-error">{{ errorMessage }}</p>
+      }
+
+      <div class="rr-cards">
+        @if (hasSearched && !isLoading && allResults.length === 0) {
+          <article class="rr-card rr-empty-search-notice">
+            <p><strong>Zip code/city not stored in database.</strong></p>
+            <p>Would you like to suggest a resource?</p>
+            @if (!showSuggestionForm) {
+              <p class="rr-anon-note"><strong>This is completely anonymous.</strong> No login or personal tracking required.</p>
+              <button type="button" class="rr-suggest-btn" (click)="showSuggestResourcePrompt()">Suggest a resource</button>
+            } @else {
+              <section class="rr-suggest-form">
+                <h3>Suggest a Resource</h3>
+                <p class="rr-suggest-sub">Admin will review your suggestion before publishing.</p>
+
+                <div class="rr-form-row">
+                  <input [(ngModel)]="suggestionForm.zipOrCity" type="text" placeholder="Zip code or city" />
+                </div>
+
+                <div class="rr-form-row rr-type-row">
+                  @for (category of categories; track category.id) {
+                    <button
+                      type="button"
+                      class="rr-type-choice"
+                      [class.selected]="suggestionForm.categoryId === category.id"
+                      (click)="setSuggestionCategory(category.id)"
+                    >
+                      {{ category.icon }} {{ category.label }}
+                    </button>
+                  }
+                </div>
+
+                <textarea [(ngModel)]="suggestionForm.notes" rows="3" placeholder="Anything else admin should know?"></textarea>
+
+                @if (submissionError) {
+                  <p class="rr-form-error">{{ submissionError }}</p>
+                }
+                @if (submissionSuccess) {
+                  <p class="rr-form-success">{{ submissionSuccess }}</p>
+                }
+
+                <button type="button" class="rr-submit-btn" [disabled]="isSubmittingSuggestion" (click)="submitSuggestion()">
+                  {{ isSubmittingSuggestion ? 'Submitting...' : 'Submit suggestion' }}
+                </button>
+              </section>
+            }
+          </article>
+        }
+
+        @if (!hasSearched && filteredResults.length === 0) {
+          <article class="rr-card rr-empty">
+            <p>Enter a zip code or city above, then click Search to load {{ selectedCategoryLabel.toLowerCase() }} resources.</p>
+          </article>
+        }
+
+        @for (resource of filteredResults; track resource.id; let i = $index) {
+          <article class="rr-card">
+            <div class="rr-card-icon-wrap">{{ getResultIcon(i) }}</div>
+
+            <div class="rr-card-body">
+              <p class="rr-card-name">{{ resource.name }}</p>
+              <button
+                type="button"
+                class="rr-card-address"
+                (click)="toggleResourceDetails(resource.id)"
+              >
+                <span class="rr-address-main">📍 {{ resource.address }}, {{ resource.city || resolvedCityName }}, {{ resource.state || 'NJ' }}</span>
+                <span class="rr-see-details">{{ expandedResourceId === resource.id ? 'Hide details' : 'See details' }}</span>
+              </button>
+
+              <div class="rr-card-tags">
+                @for (tag of getResourceTags(resource); track tag.label) {
+                  <span class="rr-tag {{ tag.className }}">{{ tag.label }}</span>
+                }
+              </div>
+
+              <p class="rr-card-hours">{{ getHoursLine(resource) }}</p>
+
+              @if (expandedResourceId === resource.id) {
+                <div class="rr-card-details">
+                  @if (isOffline) {
+                    <p class="rr-offline-map-note">Map unavailable offline.</p>
+                  } @else {
+                    <div class="rr-map-embed-wrap">
+                      <iframe
+                        class="rr-map-embed"
+                        [src]="getGoogleMapsEmbedUrl(resource)"
+                        loading="lazy"
+                        referrerpolicy="no-referrer-when-downgrade"
+                        title="Resource location map"
+                      ></iframe>
+                    </div>
+                  }
+
+                  @if (resource.website) {
+                    <p><strong>Website:</strong> <a [href]="resource.website" target="_blank" rel="noopener noreferrer">{{ resource.website }}</a> <span class="rr-external-inline">(opens external site)</span></p>
+                  } @else {
+                    <p><strong>Website:</strong> Not listed</p>
+                  }
+
+                  <p>
+                    <strong>Map:</strong>
+                    <a [href]="getGoogleMapsUrl(resource)" target="_blank" rel="noopener noreferrer">
+                      Open in Google Maps
+                    </a>
+                    <span class="rr-external-inline">(opens external map app/site)</span>
+                  </p>
+
+                  @if (resource.hours_of_operation) {
+                    <p><strong>Hours:</strong> {{ resource.hours_of_operation }}</p>
+                  }
+
+                  <p><strong>Phone:</strong> {{ resource.phone_number || 'Not listed' }}</p>
+
+                  @if (resource.requirements) {
+                    <p><strong>What you need to bring:</strong> {{ resource.requirements }}</p>
+                  }
+                </div>
+              }
+    </div>
+
+            <div class="rr-card-right">
+              <a
+                class="rr-map-link"
+                [href]="getGoogleMapsUrl(resource)"
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Open in Google Maps"
+              >
+                <span class="rr-pin">📍</span>
+                <span class="rr-map-link-text">Go to Google Maps</span>
+              </a>
+              <button type="button" class="rr-save-btn" (click)="toggleSaveResource(resource)">
+                {{ isSavedResource(resource.id) ? 'Unsave' : 'Save' }}
+              </button>
+            </div>
+          </article>
+        }
+
+        @if (hasSearched && allResults.length > 0 && filteredResults.length === 0) {
+          <article class="rr-card rr-empty">
+            <p>No {{ selectedCategoryLabel.toLowerCase() }} resources found for this area.</p>
+          </article>
+        }
+      </div>
+
+      @if (hasSearched) {
+        <p class="rr-footer">
+          Showing {{ filteredResults.length }} result{{ filteredResults.length === 1 ? '' : 's' }} for {{ selectedCategoryLabel }}
+        </p>
+      }
+    </section>
+  }
+</main>
