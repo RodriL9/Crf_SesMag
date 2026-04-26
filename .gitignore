@@ -1,5 +1,3 @@
-
-
 # Dependencies
 node_modules/
 **/node_modules/
@@ -31,7 +29,19 @@ pnpm-debug.log*
 .angular/
 .cache/
 *.tsbuildinfo
+tmp/
+out-tsc/
+bazel-out/
+.sass-cache/
+connect.lock
+libpeerconnection.log
+testem.log
+typings/
+Thumbs.db
 
 # Coverage
 coverage/
 **/coverage/
+
+docs/
+**/docs/
