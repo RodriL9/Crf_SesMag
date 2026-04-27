@@ -45,6 +45,8 @@ const authRoutes = require('./routes/auth.routes');
 const resourceRoutes = require('./routes/resource.routes');
 const categoryRoutes = require('./routes/category.routes');
 const savedRoutes = require('./routes/saved.routes');
+const notificationsRoutes = require('./routes/notifications.routes');
+const accountRoutes = require('./routes/account.routes');
 const adminRoutes = require('./routes/admin.routes');
 const submissionRoutes = require('./routes/submission.routes');
 
@@ -52,6 +54,8 @@ app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/resources', resourceRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/saved', savedRoutes);
+app.use('/api/notifications', notificationsRoutes);
+app.use('/api/account', accountRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/submissions', submissionRoutes);
 

@@ -1,0 +1,113 @@
+const bcrypt = require('bcryptjs');
+const pool = require('../config/db');
+const { signAccessToken } = require('../utils/jwt');
+
+function fullName(firstName, lastName, fallbackEmail = '') {
+  const joined = [firstName, lastName].filter(Boolean).join(' ').trim();
+  return joined || fallbackEmail.split('@')[0] || 'User';
+}
+
+async function updateAccount(req, res, next) {
+  const { email, currentPassword, newPassword } = req.body;
+  const userId = req.user.sub;
+
+  try {
+    const currentResult = await pool.query(
+      'SELECT id, email, password_hash, first_name, last_name, role, is_verified FROM users WHERE id = $1 LIMIT 1;',
+      [userId]
+    );
+
+    if (currentResult.rowCount === 0) {
+      return res.status(404).json({ error: 'User account not found.' });
+    }
+
+    const currentUser = currentResult.rows[0];
+    const normalizedEmail = email.trim().toLowerCase();
+
+    if (normalizedEmail !== currentUser.email) {
+      const emailInUse = await pool.query('SELECT id FROM users WHERE email = $1 AND id <> $2 LIMIT 1;', [
+        normalizedEmail,
+        userId,
+      ]);
+      if (emailInUse.rowCount > 0) {
+        return res.status(409).json({ error: 'That email is already in use.' });
+      }
+    }
+
+    let nextPasswordHash = currentUser.password_hash;
+    if (newPassword) {
+      if (!currentUser.password_hash) {
+        return res.status(400).json({ error: 'Password change is unavailable for this account.' });
+      }
+      const isCurrentPasswordValid = await bcrypt.compare(currentPassword, currentUser.password_hash);
+      if (!isCurrentPasswordValid) {
+        return res.status(401).json({ error: 'Current password is incorrect.' });
+      }
+      nextPasswordHash = await bcrypt.hash(newPassword, 10);
+    }
+
+    const updatedResult = await pool.query(
+      `UPDATE users
+       SET email = $1,
+           password_hash = $2,
+           updated_at = NOW()
+       WHERE id = $3
+       RETURNING id, first_name, last_name, email, role, is_verified;`,
+      [normalizedEmail, nextPasswordHash, userId]
+    );
+
+    const updatedUser = updatedResult.rows[0];
+    const token = signAccessToken({
+      sub: updatedUser.id,
+      email: updatedUser.email,
+      role: updatedUser.role,
+      name: fullName(updatedUser.first_name, updatedUser.last_name, updatedUser.email),
+    });
+
+    return res.json({
+      message: 'Account settings updated.',
+      token,
+      user: {
+        id: updatedUser.id,
+        name: fullName(updatedUser.first_name, updatedUser.last_name, updatedUser.email),
+        email: updatedUser.email,
+        role: updatedUser.role,
+        isEmailVerified: updatedUser.is_verified,
+      },
+    });
+  } catch (error) {
+    return next(error);
+  }
+}
+
+async function deleteAccount(req, res, next) {
+  const { currentPassword } = req.body;
+  const userId = req.user.sub;
+
+  try {
+    const userResult = await pool.query('SELECT id, password_hash FROM users WHERE id = $1 LIMIT 1;', [userId]);
+    if (userResult.rowCount === 0) {
+      return res.status(404).json({ error: 'User account not found.' });
+    }
+
+    const user = userResult.rows[0];
+    if (!user.password_hash) {
+      return res.status(400).json({ error: 'Password confirmation is unavailable for this account type.' });
+    }
+
+    const isPasswordValid = await bcrypt.compare(currentPassword, user.password_hash);
+    if (!isPasswordValid) {
+      return res.status(401).json({ error: 'Current password is incorrect.' });
+    }
+
+    await pool.query('DELETE FROM users WHERE id = $1;', [userId]);
+    return res.json({ message: 'Account deleted.' });
+  } catch (error) {
+    return next(error);
+  }
+}
+
+module.exports = {
+  updateAccount,
+  deleteAccount,
+};

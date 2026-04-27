@@ -160,68 +160,560 @@
 
     </section>
   } @else if (viewMode === 'userDashboard') {
-    <section class="rr-wrap">
-      <div class="rr-top-title" (click)="handleTopTitleClick()">Community Resource Finder</div>
+    <section class="db-page">
+      <div class="db-wrap">
+        <aside class="db-sidebar">
+          <div class="db-user-chip">
+            <div class="db-avatar">{{ getDashboardUserInitials() }}</div>
+            <div>
+              <p class="db-user-name">{{ getDashboardUserName() }}</p>
+              <p class="db-user-sub">{{ getDashboardUserSubLabel() }}</p>
+            </div>
+          </div>
 
-      <div class="rr-header">
-        <div class="rr-breadcrumb">
-          <p class="rr-breadcrumb-title">ASH User Dashboard</p>
-          <p class="rr-breadcrumb-sub">Signed in as {{ currentUser?.name || currentUser?.email }}</p>
+          <button type="button" class="db-nav-item" [class.active]="dashboardTab === 'dashboard'" (click)="openDashboardMain()">
+            <span>▦</span>
+            Dashboard
+          </button>
+
+          <button type="button" class="db-nav-item" [class.active]="dashboardTab === 'notifications'" (click)="openDashboardNotifications()">
+            <span>🔔</span>
+            Notifications
+            <span class="db-badge">{{ unreadNotificationCount }}</span>
+          </button>
+
+          <button type="button" class="db-nav-item" [class.active]="dashboardTab === 'saved'" (click)="openDashboardSavedResources()">
+            <span>🔖</span>
+            Saved Resources
+            <span class="db-badge">{{ savedResources.length }}</span>
+          </button>
+
+          <button type="button" class="db-nav-item" [class.active]="dashboardTab === 'flagged'" (click)="openDashboardFlaggedResources()">
+            <span>🚩</span>
+            Flagged Resources
+            <span class="db-badge">{{ flaggedResources.length }}</span>
+          </button>
+
+          <button type="button" class="db-nav-item" [class.active]="dashboardTab === 'updateRequests'" (click)="openDashboardUpdateRequests()">
+            <span>📝</span>
+            Update Requests
+            <span class="db-badge">{{ updateRequests.length }}</span>
+          </button>
+
+          <button type="button" class="db-nav-item" [class.active]="dashboardTab === 'settings'" (click)="openDashboardAccountSettings()">
+            <span>👤</span>
+            Account Settings
+          </button>
+
+          <div class="db-spacer"></div>
+
+          <button type="button" class="db-logout" (click)="logout()">
+            <span>↪</span>
+            Log out
+          </button>
+        </aside>
+
+        <div class="db-main">
+          @if (dashboardTab === 'notifications') {
+            <div class="page-title-bar">
+              <p class="page-title">Resource Notifications</p>
+              <span class="page-count">Sorted by date - {{ unreadNotificationCount }} unread</span>
+            </div>
+            <div class="notif-list">
+              @if (dashboardNotifications.length === 0) {
+                <article class="rr-card rr-empty">
+                  <p>No database edit notifications for your saved resources yet.</p>
+                </article>
+              } @else {
+                @for (item of dashboardNotifications; track item.id) {
+                  <div class="notif-item">
+                    <div class="notif-dot" [class.new]="item.isUnread" [class.read]="!item.isUnread"></div>
+                    <div class="notif-body">
+                      <p class="notif-title">
+                        {{ item.title }}
+                        <span class="notif-tag tag-{{ item.category }}">{{ item.category | titlecase }}</span>
+                      </p>
+                      <p class="notif-sub">{{ item.details }}</p>
+                    </div>
+                    <span class="notif-date">{{ item.dateLabel }}</span>
+                  </div>
+                }
+              }
+            </div>
+          } @else if (dashboardTab === 'saved') {
+            <div class="page-title-bar">
+              <p class="page-title">Saved Resources</p>
+              <span class="page-count">{{ savedResources.length }} saved</span>
+            </div>
+            <div class="saved-list">
+              @if (savedResources.length === 0) {
+                <article class="rr-card rr-empty">
+                  <p>No saved resources yet.</p>
+                </article>
+              } @else {
+                @for (resource of savedResources; track resource.id) {
+                  <article class="saved-item">
+                    <div class="saved-icon" [style.background]="getSavedResourceIconBackground(resource)">
+                      {{ getSavedResourceIcon(resource) }}
+                    </div>
+                    <div class="saved-body">
+                      <p class="saved-name">{{ resource.name }}</p>
+                      <p class="saved-addr">
+                        {{ resource.address }} · {{ getSavedResourceHours(resource) }}
+                      </p>
+                    </div>
+                    <div class="saved-actions">
+                      <button type="button" class="btn-sm btn-view" (click)="viewSavedResource(resource.id)">
+                        {{ expandedResourceId === resource.id ? 'Hide' : 'View' }}
+                      </button>
+                      <button type="button" class="btn-sm btn-remove" (click)="toggleSaveResource(resource)">Remove</button>
+                    </div>
+                  </article>
+
+                  @if (expandedResourceId === resource.id) {
+                    <article class="rr-card">
+                      <div class="rr-card-body">
+                        <p class="rr-card-hours"><strong>Address:</strong> {{ resource.address }}, {{ resource.city || 'NJ' }}</p>
+                        <p class="rr-card-hours"><strong>Phone:</strong> {{ resource.phone_number || 'Not listed' }}</p>
+                        <p class="rr-card-hours">
+                          <strong>Website:</strong>
+                          @if (resource.website) {
+                            <a [href]="resource.website" target="_blank" rel="noopener noreferrer">{{ resource.website }}</a>
+                          } @else {
+                            Not listed
+                          }
+                        </p>
+                      </div>
+                      <div class="rr-card-right">
+                        <a
+                          class="rr-map-link"
+                          [href]="getGoogleMapsUrl(resource)"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title="Open in Google Maps"
+                        >
+                          <span class="rr-pin">📍</span>
+                          <span class="rr-map-link-text">Go to Google Maps</span>
+                        </a>
+                      </div>
+                    </article>
+                  }
+                }
+              }
+            </div>
+          } @else if (dashboardTab === 'flagged') {
+            <div class="page-title-bar">
+              <p class="page-title">Your Flagged Resources</p>
+              <span class="page-count">{{ flaggedResources.length }} flagged · under review</span>
+            </div>
+            <div class="flagged-list">
+              @if (flaggedResources.length === 0) {
+                <article class="rr-card rr-empty">
+                  <p>No flagged resources yet. Use "Flag resource" on result cards.</p>
+                </article>
+              } @else {
+                @for (item of flaggedResources; track item.id) {
+                  <article class="flagged-item">
+                    <div class="flagged-top">
+                      <div class="saved-icon" [style.background]="getSavedResourceIconBackground(item.resource)">
+                        {{ getSavedResourceIcon(item.resource) }}
+                      </div>
+                      <div class="saved-body">
+                        <p class="saved-name">{{ item.resource.name }}</p>
+                        <p class="saved-addr">{{ item.resource.address }} - flagged {{ item.flaggedDateLabel }}</p>
+                      </div>
+                      <div class="saved-actions">
+                        <button type="button" class="btn-sm btn-view" (click)="viewFlaggedResource(item.id)">
+                          {{ expandedFlaggedResourceId === item.id ? 'Hide' : 'View' }}
+                        </button>
+                        <button type="button" class="btn-sm btn-remove" (click)="removeFlaggedResource(item.id)">
+                          Remove flag
+                        </button>
+                      </div>
+                    </div>
+                    <span class="flag-reason">🚩 Your note: "{{ item.reason }}"</span>
+                  </article>
+
+                  @if (expandedFlaggedResourceId === item.id) {
+                    <article class="rr-card">
+                      <div class="rr-card-body">
+                        <p class="rr-card-hours"><strong>Address:</strong> {{ item.resource.address }}, {{ item.resource.city || 'NJ' }}</p>
+                        <p class="rr-card-hours"><strong>Phone:</strong> {{ item.resource.phone_number || 'Not listed' }}</p>
+                        <p class="rr-card-hours">
+                          <strong>Website:</strong>
+                          @if (item.resource.website) {
+                            <a [href]="item.resource.website" target="_blank" rel="noopener noreferrer">{{ item.resource.website }}</a>
+                          } @else {
+                            Not listed
+                          }
+                        </p>
+                      </div>
+                    </article>
+                  }
+                }
+              }
+            </div>
+          } @else if (dashboardTab === 'updateRequests') {
+            <div class="page-title-bar">
+              <p class="page-title">Resource Inclusion Requests</p>
+              <span class="page-count">{{ updateRequests.length }} submissions</span>
+            </div>
+            <div class="update-request-form">
+              <div class="update-request-row">
+                <div class="field-input">
+                  <input
+                    type="text"
+                    maxlength="5"
+                    inputmode="numeric"
+                    placeholder="Enter ZIP code (e.g., 10029) to request resources"
+                    [(ngModel)]="updateRequestZip"
+                  />
+                </div>
+                <button type="button" class="btn-save" (click)="submitZipUpdateRequest()">Request resources</button>
+              </div>
+              <textarea
+                rows="3"
+                placeholder="What types of resources should be included for this ZIP/city?"
+                [(ngModel)]="updateRequestNote"
+              ></textarea>
+              @if (updateRequestError) {
+                <p class="rr-form-error">{{ updateRequestError }}</p>
+              }
+              @if (updateRequestSuccess) {
+                <p class="rr-form-success">{{ updateRequestSuccess }}</p>
+              }
+            </div>
+            <div class="sub-list">
+              @if (updateRequests.length === 0) {
+                <article class="rr-card rr-empty">
+                  <p>No update requests submitted yet.</p>
+                </article>
+              } @else {
+                @for (item of updateRequests; track item.id) {
+                  <article class="sub-item">
+                    <div class="sub-top">
+                      <div class="sub-icon" [style.background]="getSavedResourceIconBackground(item.resource)">
+                        {{ getSavedResourceIcon(item.resource) }}
+                      </div>
+                      <div class="sub-body">
+                        <p class="sub-name">{{ item.resource.name }}</p>
+                        <p class="sub-addr">{{ item.resource.address }} · Submitted {{ item.submittedDateLabel }}</p>
+                      </div>
+                      <div class="sub-status">
+                        <span class="status-pill {{ getUpdateRequestStatusClass(item.status) }}">
+                          {{ getUpdateRequestStatusLabel(item.status) }}
+                        </span>
+                        @if (item.status === 'pending') {
+                          <button type="button" class="btn-sm btn-withdraw" (click)="withdrawUpdateRequest(item.id)">
+                            Withdraw
+                          </button>
+                        }
+                      </div>
+                    </div>
+                    <span class="sub-reason">📝 Your request: "{{ item.note }}"</span>
+                  </article>
+                }
+              }
+            </div>
+          } @else if (dashboardTab === 'settings') {
+            <div class="page-title-bar">
+              <p class="page-title">Account Settings</p>
+            </div>
+
+            <div class="settings-section">
+              <p class="settings-label">Your name</p>
+              <div class="settings-row">
+                <div class="field-wrap">
+                  <div class="field-input field-input-readonly">
+                    <input type="text" placeholder="First name" [(ngModel)]="settingsFirstName" readonly />
+                  </div>
+                </div>
+                <div class="field-wrap">
+                  <div class="field-input field-input-readonly">
+                    <input type="text" placeholder="Last name" [(ngModel)]="settingsLastName" readonly />
+                  </div>
+                </div>
+              </div>
+
+              <p class="settings-label">Email address</p>
+              <div class="field-input">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9FE1CB" stroke-width="2">
+                  <rect x="2" y="4" width="20" height="16" rx="2" />
+                  <polyline points="2,4 12,13 22,4" />
+                </svg>
+                <input type="email" [(ngModel)]="settingsEmail" />
+              </div>
+
+              <p class="settings-label">Change password</p>
+              <div class="settings-row">
+                <div class="field-wrap">
+                  <div class="field-input">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9FE1CB" stroke-width="2">
+                      <rect x="3" y="11" width="18" height="11" rx="2" />
+                      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                    </svg>
+                    <input [type]="showSettingsCurrentPassword ? 'text' : 'password'" placeholder="Current password" [(ngModel)]="settingsCurrentPassword" />
+                    <button
+                      type="button"
+                      class="password-toggle-btn"
+                      (click)="showSettingsCurrentPassword = !showSettingsCurrentPassword"
+                      [attr.aria-label]="showSettingsCurrentPassword ? 'Hide password' : 'Show password'"
+                    >
+                      {{ showSettingsCurrentPassword ? '🙈' : '👁' }}
+                    </button>
+                  </div>
+                </div>
+                <div class="field-wrap">
+                  <div class="field-input">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9FE1CB" stroke-width="2">
+                      <rect x="3" y="11" width="18" height="11" rx="2" />
+                      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                    </svg>
+                    <input [type]="showSettingsNewPassword ? 'text' : 'password'" placeholder="New password" [(ngModel)]="settingsNewPassword" />
+                    <button
+                      type="button"
+                      class="password-toggle-btn"
+                      (click)="showSettingsNewPassword = !showSettingsNewPassword"
+                      [attr.aria-label]="showSettingsNewPassword ? 'Hide password' : 'Show password'"
+                    >
+                      {{ showSettingsNewPassword ? '🙈' : '👁' }}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              @if (settingsError) {
+                <p class="rr-form-error">{{ settingsError }}</p>
+              }
+              @if (settingsSuccess) {
+                <p class="rr-form-success">{{ settingsSuccess }}</p>
+              }
+
+              <button type="button" class="btn-save" (click)="saveAccountSettings()">Save changes</button>
+            </div>
+
+            <div class="delete-zone">
+              <p class="delete-title">Delete account</p>
+              <p class="delete-sub">This will permanently delete your account and all saved and flagged data.</p>
+              <button type="button" class="btn-delete" (click)="openDeleteModal()">Delete my account</button>
+            </div>
+          } @else {
+            <div class="db-topbar">
+              <div class="db-zip-wrap">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9FE1CB" stroke-width="2">
+                  <circle cx="11" cy="11" r="7" />
+                  <line x1="16.5" y1="16.5" x2="22" y2="22" />
+                </svg>
+                <input
+                  type="text"
+                  placeholder="Search by zip code or city..."
+                  maxlength="80"
+                  [(ngModel)]="searchInput"
+                  (keyup.enter)="runDashboardSearch()"
+                />
+              </div>
+              <button class="db-search-btn" [disabled]="isLoading" (click)="runDashboardSearch()">
+                {{ isLoading ? 'Searching...' : 'Search' }}
+              </button>
+              <div class="db-loc-toggle">
+                <span class="db-loc-label">Location</span>
+                <button
+                  type="button"
+                  class="toggle-btn"
+                  [class.toggle-on]="!!userLocation"
+                  [class.toggle-off]="!userLocation"
+                  (click)="requestCurrentLocation()"
+                >
+                  ON
+                </button>
+                <button
+                  type="button"
+                  class="toggle-btn"
+                  [class.toggle-on]="!userLocation"
+                  [class.toggle-off]="!!userLocation"
+                  (click)="clearCurrentLocation()"
+                >
+                  OFF
+                </button>
+              </div>
+            </div>
+            <p class="db-search-help">
+              Enter a zip code/city, then pick a category below. Toggle Location ON to see how close resources are.
+            </p>
+
+            @if (locationStatusMessage) {
+              <p class="rr-location-status">{{ locationStatusMessage }}</p>
+            }
+
+            @if (authMessage) {
+              <p class="rr-form-success">{{ authMessage }}</p>
+            }
+
+            @if (!selectedCategoryId) {
+              <div class="db-grid">
+                @for (category of categories; track category.id) {
+                  <button
+                    type="button"
+                    class="db-cat-card {{ category.className }}"
+                    (click)="openDashboardCategory(category.label, category.id)"
+                  >
+                    <div class="db-cat-icon">{{ category.icon }}</div>
+                    <div class="db-cat-info">
+                      <p class="db-cat-name">{{ category.label }}</p>
+                      <p class="db-cat-sub">{{ category.sub }}</p>
+                    </div>
+                    <div class="db-arr">→</div>
+                  </button>
+                }
+              </div>
+            } @else {
+              <div class="db-selected-header">
+                <h3>{{ selectedCategoryLabel }} Resources</h3>
+                <button type="button" class="rr-save-btn db-back-categories-btn" (click)="selectedCategoryId = null; selectedCategoryLabel = ''; filteredResults = []">
+                  Back to categories
+                </button>
+              </div>
+            }
+
+            <div class="db-results-wrap">
+              @if (hasSearched && !selectedCategoryId) {
+                <article class="rr-card rr-empty">
+                  <p>Now choose a category above to load matching resources on this panel.</p>
+                </article>
+              } @else if (selectedCategoryId) {
+                @if (filteredResults.length === 0) {
+                  <article class="rr-card rr-empty">
+                    <p>No {{ selectedCategoryLabel.toLowerCase() }} resources found for this area.</p>
+                  </article>
+                }
+
+                @for (resource of filteredResults; track resource.id; let i = $index) {
+                  <article class="rr-card">
+                    <div class="rr-card-icon-wrap">{{ getResultIcon(i) }}</div>
+
+                    <div class="rr-card-body">
+                      <p class="rr-card-name">{{ resource.name }}</p>
+                      <button
+                        type="button"
+                        class="rr-card-address"
+                        (click)="toggleResourceDetails(resource.id)"
+                      >
+                        <span class="rr-address-main">📍 {{ resource.address }}, {{ resource.city || resolvedCityName }}, {{ resource.state || 'NJ' }}</span>
+                        <span class="rr-see-details">{{ expandedResourceId === resource.id ? 'Hide details' : 'See details' }}</span>
+                      </button>
+
+                      <div class="rr-card-tags">
+                        @for (tag of getResourceTags(resource); track tag.label) {
+                          <span class="rr-tag {{ tag.className }}">{{ tag.label }}</span>
+                        }
+                      </div>
+
+                      <p class="rr-card-hours">{{ getHoursLine(resource) }}</p>
+
+                      @if (expandedResourceId === resource.id) {
+                        <div class="rr-card-details">
+                          @if (isOffline) {
+                            <p class="rr-offline-map-note">Map unavailable offline.</p>
+                          } @else {
+                            <div class="rr-map-embed-wrap">
+                              <iframe
+                                class="rr-map-embed"
+                                [src]="getGoogleMapsEmbedUrl(resource)"
+                                loading="lazy"
+                                referrerpolicy="no-referrer-when-downgrade"
+                                title="Resource location map"
+                              ></iframe>
+                            </div>
+                          }
+
+                          @if (resource.website) {
+                            <p><strong>Website:</strong> <a [href]="resource.website" target="_blank" rel="noopener noreferrer">{{ resource.website }}</a> <span class="rr-external-inline">(opens external site)</span></p>
+                          } @else {
+                            <p><strong>Website:</strong> Not listed</p>
+                          }
+                        </div>
+                      }
+                    </div>
+
+                    <div class="rr-card-right">
+                      @if (userLocation) {
+                        <span class="rr-distance">{{ getDistanceLabel(resource) }}</span>
+                      }
+                      <a
+                        class="rr-map-link"
+                        [href]="getGoogleMapsUrl(resource)"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title="Open in Google Maps"
+                      >
+                        <span class="rr-pin">📍</span>
+                        <span class="rr-map-link-text">Go to Google Maps</span>
+                      </a>
+                      <button type="button" class="rr-save-btn" (click)="toggleSaveResource(resource)">
+                        {{ isSavedResource(resource.id) ? 'Unsave' : 'Save' }}
+                      </button>
+                      <button type="button" class="rr-save-btn rr-flag-btn" (click)="openFlagResource(resource.id)">
+                        Flag resource
+                      </button>
+                    </div>
+                  @if (flaggingResourceId === resource.id) {
+                    <div class="rr-flag-form">
+                      <textarea
+                        [(ngModel)]="flagReason"
+                        rows="3"
+                        placeholder="What is outdated or incorrect about this resource?"
+                      ></textarea>
+                      @if (flagError) {
+                        <p class="rr-form-error">{{ flagError }}</p>
+                      }
+                      @if (flagSuccess) {
+                        <p class="rr-form-success">{{ flagSuccess }}</p>
+                      }
+                      <div class="rr-flag-actions">
+                        <button type="button" class="rr-submit-btn" (click)="submitFlagResource(resource)">Submit flag</button>
+                        <button type="button" class="rr-save-btn" (click)="cancelFlagResource()">Cancel</button>
+                      </div>
+                    </div>
+                  }
+                  </article>
+                }
+              }
+            </div>
+          }
         </div>
       </div>
 
-      <article class="rr-card dashboard-card">
-        <div class="rr-card-body">
-          <p class="rr-card-name">Account</p>
-          <p class="rr-card-hours"><strong>Email:</strong> {{ currentUser?.email }}</p>
-          <p class="rr-card-hours"><strong>Role:</strong> {{ currentUser?.role }}</p>
-          <p class="rr-card-hours"><strong>Saved resources:</strong> {{ savedResources.length }}</p>
-          <p class="rr-card-hours"><strong>Recent searches:</strong> {{ recentSearches.length }}</p>
-          @if (authMessage) {
-            <p class="rr-form-success">{{ authMessage }}</p>
-          }
+      @if (showDeleteModal) {
+        <div class="modal-overlay visible">
+          <div class="modal-card">
+            <p class="modal-title">Delete your account?</p>
+            <p class="modal-sub">Please enter your password to confirm. This action cannot be undone.</p>
+            <div class="field-input">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9FE1CB" stroke-width="2">
+                <rect x="3" y="11" width="18" height="11" rx="2" />
+                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+              </svg>
+              <input [type]="showDeletePassword ? 'text' : 'password'" placeholder="Enter your password" [(ngModel)]="deletePassword" />
+              <button
+                type="button"
+                class="password-toggle-btn"
+                (click)="showDeletePassword = !showDeletePassword"
+                [attr.aria-label]="showDeletePassword ? 'Hide password' : 'Show password'"
+              >
+                {{ showDeletePassword ? '🙈' : '👁' }}
+              </button>
+            </div>
+            @if (deleteError) {
+              <p class="rr-form-error">{{ deleteError }}</p>
+            }
+            <div class="modal-warning">Deleting your account will remove saved resources, flagged items, and account data.</div>
+            <div class="modal-row">
+              <button type="button" class="btn-cancel" (click)="closeDeleteModal()">Cancel</button>
+              <button type="button" class="btn-confirm-delete" (click)="confirmDeleteAccount()">Yes, delete my account</button>
+            </div>
+          </div>
         </div>
-        <div class="rr-card-right">
-          <button type="button" class="rr-save-btn" (click)="openSavedResources()">Open saved list</button>
-          <button type="button" class="rr-save-btn" [disabled]="isSyncingSaved" (click)="syncSavedResourcesFromServer()">
-            {{ isSyncingSaved ? 'Syncing...' : 'Sync saved to account' }}
-          </button>
-          <button type="button" class="rr-save-btn" (click)="goHome()">Find resources</button>
-        </div>
-      </article>
-
-      <article class="rr-card dashboard-card">
-        <div class="rr-card-body">
-          <p class="rr-card-name">Location Services (Optional)</p>
-          <p class="rr-card-hours">
-            Turn this on only if you want distance estimates in results. Your location is not stored.
-          </p>
-          @if (locationStatusMessage) {
-            <p class="rr-location-status">{{ locationStatusMessage }}</p>
-          }
-        </div>
-        <div class="rr-card-right">
-          <button class="rr-location-btn" (click)="requestCurrentLocation()" [disabled]="isRequestingLocation">
-            {{ isRequestingLocation ? 'Locating...' : 'Enable location' }}
-          </button>
-          @if (userLocation) {
-            <button class="rr-location-btn secondary" (click)="clearCurrentLocation()">Hide distance</button>
-          }
-        </div>
-      </article>
-
-      <article class="rr-card dashboard-card">
-        <div class="rr-card-body">
-          <p class="rr-card-name">Flag Outdated Resources</p>
-          <p class="rr-card-hours">
-            Open any resource result card and click <strong>Flag resource</strong> to send it for admin review.
-          </p>
-        </div>
-      </article>
-
-      <div class="ash-logout-row">
-        <button type="button" class="ash-logout-btn" (click)="logout()">Log out</button>
-      </div>
+      }
     </section>
   } @else if (viewMode === 'login') {
     <section class="auth-screen">
@@ -279,12 +771,20 @@
                 <path d="M7 11V7a5 5 0 0 1 10 0v4" />
               </svg>
               <input
-                type="password"
+                [type]="showLoginPassword ? 'text' : 'password'"
                 placeholder="••••••••"
                 autocomplete="current-password"
                 [(ngModel)]="loginPassword"
                 (keyup.enter)="submitLogin()"
               />
+              <button
+                type="button"
+                class="password-toggle-btn"
+                (click)="showLoginPassword = !showLoginPassword"
+                [attr.aria-label]="showLoginPassword ? 'Hide password' : 'Show password'"
+              >
+                {{ showLoginPassword ? '🙈' : '👁' }}
+              </button>
             </div>
           </div>
 
@@ -451,11 +951,19 @@
                 <path d="M7 11V7a5 5 0 0 1 10 0v4" />
               </svg>
               <input
-                type="password"
+                [type]="showRegisterPassword ? 'text' : 'password'"
                 placeholder="Min. 8 characters"
                 autocomplete="new-password"
                 [(ngModel)]="registerPassword"
               />
+              <button
+                type="button"
+                class="password-toggle-btn"
+                (click)="showRegisterPassword = !showRegisterPassword"
+                [attr.aria-label]="showRegisterPassword ? 'Hide password' : 'Show password'"
+              >
+                {{ showRegisterPassword ? '🙈' : '👁' }}
+              </button>
             </div>
           </div>
 
@@ -467,12 +975,20 @@
                 <path d="M7 11V7a5 5 0 0 1 10 0v4" />
               </svg>
               <input
-                type="password"
+                [type]="showRegisterConfirmPassword ? 'text' : 'password'"
                 placeholder="Repeat password"
                 autocomplete="new-password"
                 [(ngModel)]="registerConfirmPassword"
                 (keyup.enter)="submitRegister()"
               />
+              <button
+                type="button"
+                class="password-toggle-btn"
+                (click)="showRegisterConfirmPassword = !showRegisterConfirmPassword"
+                [attr.aria-label]="showRegisterConfirmPassword ? 'Hide password' : 'Show password'"
+              >
+                {{ showRegisterConfirmPassword ? '🙈' : '👁' }}
+              </button>
             </div>
           </div>
 

@@ -48,6 +48,47 @@ type AuthUser = {
   isEmailVerified?: boolean;
 };
 
+type NotificationItem = {
+  id: string;
+  title: string;
+  details: string;
+  category: 'food' | 'health' | 'housing' | 'jobs' | 'legal' | 'government';
+  dateLabel: string;
+  isUnread: boolean;
+};
+
+type ApiNotificationRow = {
+  notification_id: string;
+  action: 'created' | 'updated' | 'verified' | 'deleted' | string;
+  created_at: string;
+  resource_id: string;
+  resource_name: string;
+  address: string | null;
+  city: string | null;
+  state: string | null;
+  zip_code: string | null;
+  category_name: string | null;
+};
+
+type FlaggedResourceItem = {
+  id: string;
+  resource: Resource;
+  reason: string;
+  flaggedAt: string;
+  flaggedDateLabel: string;
+};
+
+type UpdateRequestStatus = 'pending' | 'reviewed' | 'declined';
+
+type UpdateRequestItem = {
+  id: string;
+  resource: Resource;
+  note: string;
+  submittedAt: string;
+  submittedDateLabel: string;
+  status: UpdateRequestStatus;
+};
+
 @Component({
   selector: 'app-root',
   standalone: true,
@@ -61,6 +102,8 @@ export class AppComponent implements OnInit, OnDestroy {
   private readonly apiBaseUrl = 'http://localhost:8080/api';
   private readonly guestSavedResourcesKey = 'crf_saved_resources_local_guest';
   private readonly guestRecentSearchesKey = 'crf_recent_searches_guest';
+  private readonly guestFlaggedResourcesKey = 'crf_flagged_resources_guest';
+  private readonly guestUpdateRequestsKey = 'crf_update_requests_guest';
 
   readonly title = 'Community Resource Finder';
   searchInput = '';
@@ -85,17 +128,39 @@ export class AppComponent implements OnInit, OnDestroy {
   filteredResults: Resource[] = [];
   savedResources: Resource[] = [];
   currentUser: AuthUser | null = null;
+  dashboardTab: 'dashboard' | 'notifications' | 'saved' | 'flagged' | 'updateRequests' | 'settings' = 'dashboard';
   authToken = '';
   authMessage = '';
   isSyncingSaved = false;
   flaggingResourceId: string | null = null;
+  expandedFlaggedResourceId: string | null = null;
   flagReason = '';
   flagError = '';
   flagSuccess = '';
+  flaggedResources: FlaggedResourceItem[] = [];
+  updateRequests: UpdateRequestItem[] = [];
+  settingsFirstName = '';
+  settingsLastName = '';
+  settingsEmail = '';
+  settingsCurrentPassword = '';
+  showSettingsCurrentPassword = false;
+  settingsNewPassword = '';
+  showSettingsNewPassword = false;
+  settingsError = '';
+  settingsSuccess = '';
+  showDeleteModal = false;
+  deletePassword = '';
+  showDeletePassword = false;
+  deleteError = '';
+  updateRequestZip = '';
+  updateRequestNote = '';
+  updateRequestError = '';
+  updateRequestSuccess = '';
   showSuggestionForm = false;
   isSubmittingSuggestion = false;
   loginEmail = '';
   loginPassword = '';
+  showLoginPassword = false;
   loginRole: 'user' | 'admin' = 'user';
   loginError = '';
   loginSuccess = '';
@@ -109,7 +174,9 @@ export class AppComponent implements OnInit, OnDestroy {
   registerEmail = '';
   registerRole: 'user' | 'admin' = 'user';
   registerPassword = '';
+  showRegisterPassword = false;
   registerConfirmPassword = '';
+  showRegisterConfirmPassword = false;
   registerError = '';
   registerSuccess = '';
   isRegistering = false;
@@ -118,6 +185,7 @@ export class AppComponent implements OnInit, OnDestroy {
     categoryId: null,
     notes: '',
   };
+  dashboardNotifications: NotificationItem[] = [];
 
   readonly categories = [
     { id: 1, label: 'Food', sub: 'Pantries & meals', icon: '🍎', className: 'card-food' },
@@ -139,6 +207,8 @@ export class AppComponent implements OnInit, OnDestroy {
   ngOnInit(): void {
     this.loadAuthSession();
     this.loadSavedResources();
+    this.loadFlaggedResources();
+    this.loadUpdateRequests();
     this.refreshRecentSearches();
     this.isOffline = !navigator.onLine;
     window.addEventListener('offline', this.onOfflineHandler);
@@ -296,7 +366,319 @@ export class AppComponent implements OnInit, OnDestroy {
       return;
     }
     this.authMessage = '';
+    this.dashboardTab = 'dashboard';
     this.viewMode = 'userDashboard';
+  }
+
+  getDashboardUserName(): string {
+    const candidate = this.currentUser?.name?.trim();
+    if (candidate) return candidate;
+    const email = this.currentUser?.email || '';
+    return email.includes('@') ? email.split('@')[0] : 'User';
+  }
+
+  getDashboardUserInitials(): string {
+    const name = this.getDashboardUserName();
+    const parts = name.split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return 'U';
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+  }
+
+  getDashboardUserSubLabel(): string {
+    return this.currentUser?.role === 'admin' ? 'Admin' : 'Member';
+  }
+
+  runDashboardSearch(): void {
+    const term = this.searchInput.trim();
+    if (!term) {
+      this.authMessage = 'Enter a ZIP code or city first.';
+      return;
+    }
+
+    let params = new HttpParams();
+    if (/^\d{5}$/.test(term)) {
+      params = params.set('zip', term);
+    } else {
+      params = params.set('city', term);
+    }
+
+    this.isLoading = true;
+    this.authMessage = '';
+    this.selectedCategoryId = null;
+    this.selectedCategoryLabel = '';
+    this.filteredResults = [];
+    this.expandedResourceId = null;
+    this.http
+      .get<Resource[]>(`${this.apiBaseUrl}/resources/search`, { params })
+      .subscribe({
+        next: (rows) => {
+          this.allResults = rows;
+          this.filteredResults = [];
+          this.hasSearched = true;
+          this.lastSearchTerm = term;
+          this.resolvedCityName = this.pickCityName(rows, term);
+          this.saveRecentSearch(term);
+          this.isLoading = false;
+          this.authMessage = rows.length
+            ? `Loaded ${rows.length} resources. Pick a category below.`
+            : 'No resources found for that area yet.';
+        },
+        error: () => {
+          this.isLoading = false;
+          this.authMessage = 'Could not load resources right now. Please try again.';
+        },
+      });
+  }
+
+  openDashboardCategory(category: string, categoryId: number): void {
+    if (!this.hasSearched) {
+      this.authMessage = 'Search by ZIP/city first, then pick a category.';
+      return;
+    }
+    this.selectedCategoryId = categoryId;
+    this.selectedCategoryLabel = category;
+    this.expandedResourceId = null;
+    this.filteredResults = this.allResults.filter((item) => {
+      const itemCategory = (item.category_name || '').toLowerCase();
+      return itemCategory === category.toLowerCase();
+    });
+    this.authMessage = this.filteredResults.length
+      ? `${this.filteredResults.length} ${category.toLowerCase()} resources loaded.`
+      : `No ${category.toLowerCase()} resources found for this area.`;
+  }
+
+  openDashboardNotifications(): void {
+    this.dashboardTab = 'notifications';
+    this.authMessage = '';
+    this.loadDashboardNotifications();
+  }
+
+  openDashboardFlaggedResources(): void {
+    this.dashboardTab = 'flagged';
+    this.authMessage = '';
+  }
+
+  openDashboardAccountSettings(): void {
+    this.dashboardTab = 'settings';
+    this.authMessage = '';
+    this.settingsError = '';
+    this.settingsSuccess = '';
+    this.deleteError = '';
+    this.initializeSettingsFormFromCurrentUser();
+  }
+
+  openDashboardUpdateRequests(): void {
+    this.dashboardTab = 'updateRequests';
+    this.authMessage = '';
+    this.updateRequestError = '';
+    this.updateRequestSuccess = '';
+  }
+
+  openDashboardMain(): void {
+    this.dashboardTab = 'dashboard';
+  }
+
+  openDashboardSavedResources(): void {
+    this.dashboardTab = 'saved';
+    this.authMessage = '';
+  }
+
+  viewSavedResource(resourceId: string): void {
+    this.expandedResourceId = this.expandedResourceId === resourceId ? null : resourceId;
+  }
+
+  getSavedResourceIcon(resource: Resource): string {
+    const category = (resource.category_name || '').toLowerCase();
+    const iconMap: Record<string, string> = {
+      food: '🍎',
+      health: '🏥',
+      housing: '🏠',
+      jobs: '💼',
+      legal: '⚖️',
+      government: '🏛️',
+    };
+    return iconMap[category] || '📍';
+  }
+
+  getSavedResourceIconBackground(resource: Resource): string {
+    const category = (resource.category_name || '').toLowerCase();
+    const colorMap: Record<string, string> = {
+      food: '#FAEEDA',
+      health: '#FCEBEB',
+      housing: '#EEEDFE',
+      jobs: '#E6F1FB',
+      legal: '#EAF3DE',
+      government: '#FAECE7',
+    };
+    return colorMap[category] || '#E1F5EE';
+  }
+
+  get unreadNotificationCount(): number {
+    return this.dashboardNotifications.filter((item) => item.isUnread).length;
+  }
+
+  saveAccountSettings(): void {
+    this.settingsError = '';
+    this.settingsSuccess = '';
+
+    const email = this.settingsEmail.trim().toLowerCase();
+
+    if (!email) {
+      this.settingsError = 'Please complete the email field.';
+      return;
+    }
+
+    if (this.settingsNewPassword && this.settingsNewPassword.length < 8) {
+      this.settingsError = 'New password must be at least 8 characters.';
+      return;
+    }
+
+    if (this.settingsNewPassword && !this.settingsCurrentPassword) {
+      this.settingsError = 'Enter current password to change password.';
+      return;
+    }
+
+    const payload: { email: string; currentPassword?: string; newPassword?: string } = { email };
+    if (this.settingsNewPassword) {
+      payload.currentPassword = this.settingsCurrentPassword;
+      payload.newPassword = this.settingsNewPassword;
+    }
+
+    this.http
+      .patch<{ message: string; token: string; user: AuthUser }>(`${this.apiBaseUrl}/account`, payload, {
+        headers: this.getAuthHeaders(),
+      })
+      .subscribe({
+        next: (response) => {
+          localStorage.setItem('crf_auth_token', response.token);
+          localStorage.setItem('crf_auth_user', JSON.stringify(response.user));
+          this.authToken = response.token;
+          this.currentUser = response.user;
+          this.settingsCurrentPassword = '';
+          this.settingsNewPassword = '';
+          this.settingsSuccess = response.message || 'Settings saved.';
+        },
+        error: (err) => {
+          this.settingsError = err?.error?.error || 'Could not save account settings right now.';
+        },
+      });
+  }
+
+  openDeleteModal(): void {
+    this.deleteError = '';
+    this.deletePassword = '';
+    this.showDeletePassword = false;
+    this.showDeleteModal = true;
+  }
+
+  closeDeleteModal(): void {
+    this.showDeleteModal = false;
+    this.deletePassword = '';
+    this.showDeletePassword = false;
+    this.deleteError = '';
+  }
+
+  confirmDeleteAccount(): void {
+    if (!this.deletePassword.trim()) {
+      this.deleteError = 'Please enter your password to confirm deletion.';
+      return;
+    }
+
+    this.http
+      .delete<{ message: string }>(`${this.apiBaseUrl}/account`, {
+        headers: this.getAuthHeaders(),
+        body: { currentPassword: this.deletePassword.trim() },
+      })
+      .subscribe({
+        next: (response) => {
+          if (this.currentUser) {
+            localStorage.removeItem(`crf_saved_resources_${this.currentUser.id}`);
+            localStorage.removeItem(`crf_recent_searches_${this.currentUser.id}`);
+            localStorage.removeItem(`crf_flagged_resources_${this.currentUser.id}`);
+            localStorage.removeItem(`crf_update_requests_${this.currentUser.id}`);
+          }
+          this.clearAuthSession();
+          this.closeDeleteModal();
+          this.loginSuccess = response.message || 'Account deleted. You have been logged out.';
+          this.loginError = '';
+          this.viewMode = 'login';
+        },
+        error: (err) => {
+          this.deleteError = err?.error?.error || 'Could not delete account right now.';
+        },
+      });
+  }
+
+  viewFlaggedResource(itemId: string): void {
+    this.expandedFlaggedResourceId = this.expandedFlaggedResourceId === itemId ? null : itemId;
+  }
+
+  withdrawUpdateRequest(requestId: string): void {
+    this.updateRequests = this.updateRequests.filter((item) => item.id !== requestId);
+    this.persistUpdateRequests();
+  }
+
+  submitZipUpdateRequest(): void {
+    this.updateRequestError = '';
+    this.updateRequestSuccess = '';
+
+    const zip = this.updateRequestZip.trim();
+    const note = this.updateRequestNote.trim();
+
+    if (!/^\d{5}$/.test(zip)) {
+      this.updateRequestError = 'Enter a valid 5-digit ZIP code.';
+      return;
+    }
+    if (!note) {
+      this.updateRequestError = 'Please add what resources should be included for this ZIP.';
+      return;
+    }
+
+    const submittedAt = new Date().toISOString();
+    const item: UpdateRequestItem = {
+      id: `zipreq-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      resource: {
+        id: `zip-resource-${Date.now()}`,
+        name: `Resources requested for ZIP ${zip}`,
+        address: `Requested service area ${zip}`,
+        city: null,
+        state: 'NJ',
+        zip_code: zip,
+        phone_number: null,
+        category_name: null,
+      },
+      note,
+      submittedAt,
+      submittedDateLabel: this.getFlaggedDateLabel(submittedAt),
+      status: 'pending',
+    };
+
+    this.updateRequests = [item, ...this.updateRequests];
+    this.persistUpdateRequests();
+    this.updateRequestSuccess = 'Request submitted to include resources for this ZIP.';
+    this.updateRequestZip = '';
+    this.updateRequestNote = '';
+  }
+
+  getUpdateRequestStatusLabel(status: UpdateRequestStatus): string {
+    if (status === 'pending') return '⏳ Pending';
+    if (status === 'reviewed') return '✓ Reviewed';
+    return '✕ Not accepted';
+  }
+
+  getUpdateRequestStatusClass(status: UpdateRequestStatus): string {
+    if (status === 'pending') return 'status-pending';
+    if (status === 'reviewed') return 'status-reviewed';
+    return 'status-declined';
+  }
+
+  removeFlaggedResource(itemId: string): void {
+    this.flaggedResources = this.flaggedResources.filter((item) => item.id !== itemId);
+    this.persistFlaggedResources();
+    if (this.expandedFlaggedResourceId === itemId) {
+      this.expandedFlaggedResourceId = null;
+    }
   }
 
   openForgotPassword(): void {
@@ -372,7 +754,11 @@ export class AppComponent implements OnInit, OnDestroy {
           this.loadAuthSession();
           this.savedResources = [];
           this.recentSearches = [];
+          this.flaggedResources = [];
+          this.updateRequests = [];
           this.loadSavedResources();
+          this.loadFlaggedResources();
+          this.loadUpdateRequests();
           this.refreshRecentSearches();
           this.loginSuccess = `Signed in successfully${response.user?.name ? `, ${response.user.name}` : ''}.`;
           this.viewMode = returnedRole === 'user' ? 'userDashboard' : 'landing';
@@ -634,6 +1020,10 @@ export class AppComponent implements OnInit, OnDestroy {
     return `${miles.toFixed(1)} mi`;
   }
 
+  getSavedResourceHours(resource: Resource): string {
+    return this.getTodayHours(resource) || 'Hours not listed';
+  }
+
   isSavedResource(resourceId: string): boolean {
     return this.savedResources.some((item) => item.id === resourceId);
   }
@@ -718,8 +1108,34 @@ export class AppComponent implements OnInit, OnDestroy {
       })
       .subscribe({
         next: () => {
+          const flaggedAt = new Date().toISOString();
+          const flaggedItem: FlaggedResourceItem = {
+            id: `flag-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            resource: { ...resource },
+            reason,
+            flaggedAt,
+            flaggedDateLabel: this.getFlaggedDateLabel(flaggedAt),
+          };
+          this.flaggedResources = [flaggedItem, ...this.flaggedResources];
+          this.persistFlaggedResources();
+
+          const requestItem: UpdateRequestItem = {
+            id: flaggedItem.id,
+            resource: { ...resource },
+            note: reason,
+            submittedAt: flaggedAt,
+            submittedDateLabel: this.getFlaggedDateLabel(flaggedAt),
+            status: 'pending',
+          };
+          this.updateRequests = [requestItem, ...this.updateRequests];
+          this.persistUpdateRequests();
+
           this.flagSuccess = 'Flag sent for admin review. Thank you.';
           this.flagReason = '';
+          this.flaggingResourceId = null;
+          if (this.viewMode === 'userDashboard') {
+            this.dashboardTab = 'flagged';
+          }
         },
         error: () => {
           this.flagError = 'Could not submit flag right now. Please try again.';
@@ -729,6 +1145,14 @@ export class AppComponent implements OnInit, OnDestroy {
 
   private persistSavedResources(): void {
     localStorage.setItem(this.getSavedResourcesKey(), JSON.stringify(this.savedResources));
+  }
+
+  private persistFlaggedResources(): void {
+    localStorage.setItem(this.getFlaggedResourcesKey(), JSON.stringify(this.flaggedResources));
+  }
+
+  private persistUpdateRequests(): void {
+    localStorage.setItem(this.getUpdateRequestsKey(), JSON.stringify(this.updateRequests));
   }
 
   private loadSavedResources(): void {
@@ -759,6 +1183,44 @@ export class AppComponent implements OnInit, OnDestroy {
       this.savedResources = Array.isArray(parsed) ? parsed : [];
     } catch {
       this.savedResources = [];
+    }
+  }
+
+  private loadFlaggedResources(): void {
+    const raw = localStorage.getItem(this.getFlaggedResourcesKey());
+    if (!raw) {
+      this.flaggedResources = [];
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(raw);
+      this.flaggedResources = Array.isArray(parsed) ? parsed : [];
+      this.flaggedResources = this.flaggedResources.map((item) => ({
+        ...item,
+        flaggedDateLabel: this.getFlaggedDateLabel(item.flaggedAt || new Date().toISOString()),
+      }));
+    } catch {
+      this.flaggedResources = [];
+    }
+  }
+
+  private loadUpdateRequests(): void {
+    const raw = localStorage.getItem(this.getUpdateRequestsKey());
+    if (!raw) {
+      this.updateRequests = [];
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(raw);
+      this.updateRequests = Array.isArray(parsed) ? parsed : [];
+      this.updateRequests = this.updateRequests.map((item) => ({
+        ...item,
+        submittedDateLabel: this.getFlaggedDateLabel(item.submittedAt || new Date().toISOString()),
+      }));
+    } catch {
+      this.updateRequests = [];
     }
   }
 
@@ -880,7 +1342,73 @@ export class AppComponent implements OnInit, OnDestroy {
     this.userLocation = null;
     this.locationStatusMessage = '';
     this.loadSavedResources();
+    this.loadFlaggedResources();
+    this.loadUpdateRequests();
     this.refreshRecentSearches();
+  }
+
+  private initializeSettingsFormFromCurrentUser(): void {
+    const fullName = (this.currentUser?.name || '').trim();
+    const parts = fullName.split(/\s+/).filter(Boolean);
+    this.settingsFirstName = parts[0] || '';
+    this.settingsLastName = parts.length > 1 ? parts.slice(1).join(' ') : '';
+    this.settingsEmail = this.currentUser?.email || '';
+    this.settingsCurrentPassword = '';
+    this.showSettingsCurrentPassword = false;
+    this.settingsNewPassword = '';
+    this.showSettingsNewPassword = false;
+  }
+
+  private loadDashboardNotifications(): void {
+    if (!this.currentUser || !this.authToken) {
+      this.dashboardNotifications = [];
+      return;
+    }
+
+    this.http
+      .get<ApiNotificationRow[]>(`${this.apiBaseUrl}/notifications`, { headers: this.getAuthHeaders() })
+      .subscribe({
+        next: (rows) => {
+          this.dashboardNotifications = rows.map((row, index) => {
+            const category = this.normalizeNotificationCategory(row.category_name);
+            const actionText = this.getNotificationActionLabel(row.action);
+            const locationBits = [row.address, row.city, row.state, row.zip_code].filter(Boolean).join(', ');
+            const details = locationBits
+              ? `${actionText} in database for ${row.resource_name}. Location: ${locationBits}.`
+              : `${actionText} in database for ${row.resource_name}.`;
+
+            return {
+              id: row.notification_id || `${row.resource_id}-${row.created_at}-${index}`,
+              title: `${row.resource_name} was ${row.action}`,
+              details,
+              category,
+              dateLabel: this.getFlaggedDateLabel(row.created_at),
+              isUnread: index < 3,
+            };
+          });
+        },
+        error: () => {
+          this.dashboardNotifications = [];
+          this.authMessage = 'Could not load notifications from database edits.';
+        },
+      });
+  }
+
+  private normalizeNotificationCategory(categoryName: string | null): NotificationItem['category'] {
+    const normalized = (categoryName || '').toLowerCase();
+    const allowed: NotificationItem['category'][] = ['food', 'health', 'housing', 'jobs', 'legal', 'government'];
+    if (allowed.includes(normalized as NotificationItem['category'])) {
+      return normalized as NotificationItem['category'];
+    }
+    return 'government';
+  }
+
+  private getNotificationActionLabel(action: string): string {
+    if (action === 'created') return 'New listing created';
+    if (action === 'updated') return 'Listing updated';
+    if (action === 'verified') return 'Listing verified';
+    if (action === 'deleted') return 'Listing deleted';
+    return 'Listing changed';
   }
 
   private getSavedResourcesKey(): string {
@@ -891,5 +1419,31 @@ export class AppComponent implements OnInit, OnDestroy {
   private getRecentSearchesKey(): string {
     if (!this.currentUser) return this.guestRecentSearchesKey;
     return `crf_recent_searches_${this.currentUser.id}`;
+  }
+
+  private getFlaggedResourcesKey(): string {
+    if (!this.currentUser) return this.guestFlaggedResourcesKey;
+    return `crf_flagged_resources_${this.currentUser.id}`;
+  }
+
+  private getUpdateRequestsKey(): string {
+    if (!this.currentUser) return this.guestUpdateRequestsKey;
+    return `crf_update_requests_${this.currentUser.id}`;
+  }
+
+  private getFlaggedDateLabel(isoDate: string): string {
+    const date = new Date(isoDate);
+    const today = new Date();
+    const yesterday = new Date();
+    yesterday.setDate(today.getDate() - 1);
+
+    const sameDay = (a: Date, b: Date) =>
+      a.getFullYear() === b.getFullYear() &&
+      a.getMonth() === b.getMonth() &&
+      a.getDate() === b.getDate();
+
+    if (sameDay(date, today)) return 'Today';
+    if (sameDay(date, yesterday)) return 'Yesterday';
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   }
 }
