@@ -371,11 +371,6 @@
                 </div>
                 <button type="button" class="btn-save" (click)="submitZipUpdateRequest()">Request resources</button>
               </div>
-              <textarea
-                rows="3"
-                placeholder="What types of resources should be included for this ZIP/city?"
-                [(ngModel)]="updateRequestNote"
-              ></textarea>
               @if (updateRequestError) {
                 <p class="rr-form-error">{{ updateRequestError }}</p>
               }
@@ -436,12 +431,12 @@
               </div>
 
               <p class="settings-label">Email address</p>
-              <div class="field-input">
+              <div class="field-input field-input-readonly">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9FE1CB" stroke-width="2">
                   <rect x="2" y="4" width="20" height="16" rx="2" />
                   <polyline points="2,4 12,13 22,4" />
                 </svg>
-                <input type="email" [(ngModel)]="settingsEmail" />
+                <input type="email" [(ngModel)]="settingsEmail" readonly />
               </div>
 
               <p class="settings-label">Change password</p>
@@ -547,6 +542,56 @@
 
             @if (authMessage) {
               <p class="rr-form-success">{{ authMessage }}</p>
+            }
+
+            @if (showZipResourceRequestPrompt) {
+              <div class="db-zip-request-box">
+                <div class="db-zip-request-header">
+                  <p class="db-zip-request-title">ZIP code/city not in database.</p>
+                  <button
+                    type="button"
+                    class="db-zip-request-close"
+                    aria-label="Close ZIP request prompt"
+                    (click)="dismissZipResourceRequestPrompt()"
+                  >
+                    ×
+                  </button>
+                </div>
+                <p class="db-zip-request-sub">Would you like to request resources for this ZIP code/city?</p>
+
+                <div class="db-zip-request-decision">
+                  <button
+                    type="button"
+                    class="btn-sm"
+                    [class.btn-view]="zipResourceRequestDecision !== 'yes'"
+                    [class.db-choice-active]="zipResourceRequestDecision === 'yes'"
+                    (click)="setZipResourceRequestDecision('yes')"
+                  >
+                    Yes
+                  </button>
+                  <button
+                    type="button"
+                    class="btn-sm"
+                    [class.btn-view]="zipResourceRequestDecision !== 'no'"
+                    [class.db-choice-active]="zipResourceRequestDecision === 'no'"
+                    (click)="setZipResourceRequestDecision('no')"
+                  >
+                    No
+                  </button>
+                </div>
+
+                @if (zipResourceRequestDecision === 'yes') {
+                  <p class="db-zip-request-sub">This request will include all resource types for that ZIP code.</p>
+                  <button type="button" class="btn-save" (click)="submitZipResourceRequestFromSearch()">Submit request</button>
+                }
+
+                @if (zipResourceRequestError) {
+                  <p class="rr-form-error">{{ zipResourceRequestError }}</p>
+                }
+                @if (zipResourceRequestSuccess) {
+                  <p class="rr-form-success">{{ zipResourceRequestSuccess }}</p>
+                }
+              </div>
             }
 
             @if (!selectedCategoryId) {

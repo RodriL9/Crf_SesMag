@@ -153,9 +153,12 @@ export class AppComponent implements OnInit, OnDestroy {
   showDeletePassword = false;
   deleteError = '';
   updateRequestZip = '';
-  updateRequestNote = '';
   updateRequestError = '';
   updateRequestSuccess = '';
+  showZipResourceRequestPrompt = false;
+  zipResourceRequestDecision: 'yes' | 'no' | '' = '';
+  zipResourceRequestError = '';
+  zipResourceRequestSuccess = '';
   showSuggestionForm = false;
   isSubmittingSuggestion = false;
   loginEmail = '';
@@ -409,6 +412,10 @@ export class AppComponent implements OnInit, OnDestroy {
     this.selectedCategoryLabel = '';
     this.filteredResults = [];
     this.expandedResourceId = null;
+    this.showZipResourceRequestPrompt = false;
+    this.zipResourceRequestDecision = '';
+    this.zipResourceRequestError = '';
+    this.zipResourceRequestSuccess = '';
     this.http
       .get<Resource[]>(`${this.apiBaseUrl}/resources/search`, { params })
       .subscribe({
@@ -423,12 +430,80 @@ export class AppComponent implements OnInit, OnDestroy {
           this.authMessage = rows.length
             ? `Loaded ${rows.length} resources. Pick a category below.`
             : 'No resources found for that area yet.';
+          this.showZipResourceRequestPrompt = rows.length === 0;
         },
         error: () => {
           this.isLoading = false;
           this.authMessage = 'Could not load resources right now. Please try again.';
         },
       });
+  }
+
+  setZipResourceRequestDecision(decision: 'yes' | 'no'): void {
+    this.zipResourceRequestDecision = decision;
+    this.zipResourceRequestError = '';
+    this.zipResourceRequestSuccess = '';
+  }
+
+  dismissZipResourceRequestPrompt(): void {
+    this.showZipResourceRequestPrompt = false;
+    this.zipResourceRequestDecision = '';
+    this.zipResourceRequestError = '';
+    this.zipResourceRequestSuccess = '';
+  }
+
+  submitZipResourceRequestFromSearch(): void {
+    this.zipResourceRequestError = '';
+    this.zipResourceRequestSuccess = '';
+
+    if (this.zipResourceRequestDecision !== 'yes') {
+      this.zipResourceRequestError = 'Choose Yes to submit a request.';
+      return;
+    }
+
+    const area = (this.lastSearchTerm || this.searchInput || '').trim();
+    if (!area) {
+      this.zipResourceRequestError = 'Search ZIP/city first.';
+      return;
+    }
+
+    const zipMatch = area.match(/\b\d{5}\b/);
+    if (!zipMatch) {
+      this.zipResourceRequestError = 'Please enter a 5-digit ZIP code to submit this request.';
+      return;
+    }
+    const zipLabel = zipMatch[0];
+
+    if (this.hasExistingZipRequest(zipLabel)) {
+      this.zipResourceRequestError = `A request for ZIP ${zipLabel} was already submitted.`;
+      return;
+    }
+
+    const submittedAt = new Date().toISOString();
+    const item: UpdateRequestItem = {
+      id: `zipsearch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      resource: {
+        id: `zipsearch-resource-${Date.now()}`,
+        name: `For ZIP ${zipLabel}`,
+        address: `Requested service area ${area}`,
+        city: null,
+        state: 'NJ',
+        zip_code: zipLabel,
+        phone_number: null,
+        category_name: null,
+      },
+      note: `Requested all resource types for ZIP ${zipLabel}.`,
+      submittedAt,
+      submittedDateLabel: this.getFlaggedDateLabel(submittedAt),
+      status: 'pending',
+    };
+
+    this.updateRequests = [item, ...this.updateRequests];
+    this.persistUpdateRequests();
+
+    this.zipResourceRequestSuccess = 'Request submitted and added to Update Requests.';
+    this.zipResourceRequestDecision = '';
+    this.showZipResourceRequestPrompt = false;
   }
 
   openDashboardCategory(category: string, categoryId: number): void {
@@ -522,7 +597,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.settingsError = '';
     this.settingsSuccess = '';
 
-    const email = this.settingsEmail.trim().toLowerCase();
+    const email = (this.currentUser?.email || this.settingsEmail).trim().toLowerCase();
 
     if (!email) {
       this.settingsError = 'Please complete the email field.';
@@ -555,6 +630,7 @@ export class AppComponent implements OnInit, OnDestroy {
           localStorage.setItem('crf_auth_user', JSON.stringify(response.user));
           this.authToken = response.token;
           this.currentUser = response.user;
+          this.settingsEmail = response.user.email;
           this.settingsCurrentPassword = '';
           this.settingsNewPassword = '';
           this.settingsSuccess = response.message || 'Settings saved.';
@@ -624,14 +700,13 @@ export class AppComponent implements OnInit, OnDestroy {
     this.updateRequestSuccess = '';
 
     const zip = this.updateRequestZip.trim();
-    const note = this.updateRequestNote.trim();
 
     if (!/^\d{5}$/.test(zip)) {
       this.updateRequestError = 'Enter a valid 5-digit ZIP code.';
       return;
     }
-    if (!note) {
-      this.updateRequestError = 'Please add what resources should be included for this ZIP.';
+    if (this.hasExistingZipRequest(zip)) {
+      this.updateRequestError = `A request for ZIP ${zip} was already submitted.`;
       return;
     }
 
@@ -640,7 +715,7 @@ export class AppComponent implements OnInit, OnDestroy {
       id: `zipreq-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       resource: {
         id: `zip-resource-${Date.now()}`,
-        name: `Resources requested for ZIP ${zip}`,
+        name: `For ZIP ${zip}`,
         address: `Requested service area ${zip}`,
         city: null,
         state: 'NJ',
@@ -648,7 +723,7 @@ export class AppComponent implements OnInit, OnDestroy {
         phone_number: null,
         category_name: null,
       },
-      note,
+      note: `Requested all resource types for ZIP ${zip}.`,
       submittedAt,
       submittedDateLabel: this.getFlaggedDateLabel(submittedAt),
       status: 'pending',
@@ -658,7 +733,13 @@ export class AppComponent implements OnInit, OnDestroy {
     this.persistUpdateRequests();
     this.updateRequestSuccess = 'Request submitted to include resources for this ZIP.';
     this.updateRequestZip = '';
-    this.updateRequestNote = '';
+  }
+
+  private hasExistingZipRequest(zip: string): boolean {
+    return this.updateRequests.some((item) => {
+      const itemZip = (item.resource?.zip_code || '').trim();
+      return itemZip === zip;
+    });
   }
 
   getUpdateRequestStatusLabel(status: UpdateRequestStatus): string {

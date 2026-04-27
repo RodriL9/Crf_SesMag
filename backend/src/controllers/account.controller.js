@@ -25,13 +25,7 @@ async function updateAccount(req, res, next) {
     const normalizedEmail = email.trim().toLowerCase();
 
     if (normalizedEmail !== currentUser.email) {
-      const emailInUse = await pool.query('SELECT id FROM users WHERE email = $1 AND id <> $2 LIMIT 1;', [
-        normalizedEmail,
-        userId,
-      ]);
-      if (emailInUse.rowCount > 0) {
-        return res.status(409).json({ error: 'That email is already in use.' });
-      }
+      return res.status(400).json({ error: 'Email changes are disabled for this account.' });
     }
 
     let nextPasswordHash = currentUser.password_hash;
@@ -53,7 +47,7 @@ async function updateAccount(req, res, next) {
            updated_at = NOW()
        WHERE id = $3
        RETURNING id, first_name, last_name, email, role, is_verified;`,
-      [normalizedEmail, nextPasswordHash, userId]
+      [currentUser.email, nextPasswordHash, userId]
     );
 
     const updatedUser = updatedResult.rows[0];

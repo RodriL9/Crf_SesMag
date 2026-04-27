@@ -1304,6 +1304,67 @@
   font-weight: 600;
 }
 
+.db-zip-request-box {
+  background: #fff;
+  border: 1.5px solid #cecbf6;
+  border-radius: 14px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.db-zip-request-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.db-zip-request-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: #8a1f1b;
+  margin: 0;
+}
+
+.db-zip-request-close {
+  border: 1.5px solid #cecbf6;
+  background: #f7f5ff;
+  color: #3c3489;
+  border-radius: 8px;
+  width: 30px;
+  height: 30px;
+  line-height: 1;
+  font-size: 22px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.db-zip-request-close:hover {
+  background: #eeedfe;
+}
+
+.db-zip-request-sub {
+  font-size: 14px;
+  color: #3c3489;
+  margin: 0;
+}
+
+.db-zip-request-decision {
+  display: flex;
+  gap: 8px;
+}
+
+.db-choice-active {
+  background: #1d9e75;
+  color: #fff;
+  border-color: #1d9e75;
+}
+
 .toggle-btn {
   font-size: 13px;
   font-weight: 600;
