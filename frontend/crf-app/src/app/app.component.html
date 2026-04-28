@@ -1608,7 +1608,7 @@
                           adminSubmissionSavingId === item.id ||
                           isAdminSavingEdit
                         "
-                        (click)="deleteAdminFlagSubmissionRecord(item)"
+                        (click)="openDismissFlagModal(item)"
                       >
                         {{ adminFlaggedSubmissionDeletingId === item.id ? 'Removing…' : 'Dismiss flag' }}
                       </button>
@@ -1707,7 +1707,7 @@
                           type="button"
                           class="admin-flag-completed-delete"
                           [disabled]="adminFlaggedSubmissionDeletingId === item.id || adminSubmissionSavingId === item.id"
-                          (click)="deleteAdminFlagSubmissionRecord(item)"
+                          (click)="openDismissFlagModal(item)"
                           aria-label="Dismiss flag"
                           title="Remove this flag request only; the listing stays in the directory"
                         >
@@ -2551,6 +2551,46 @@
             [disabled]="!!adminUserDeletingId"
           >
             {{ adminUserDeletingId ? 'Deleting…' : 'Delete member' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  }
+
+  @if (showDismissFlagModal && dismissFlagSubmissionTarget) {
+    <div class="modal-overlay visible">
+      <div class="modal-card">
+        <p class="modal-title">Dismiss this flag?</p>
+        <p class="modal-sub">
+          Remove this flag from the admin list? The resource listing itself is not deleted—only the flag record. This cannot be undone.
+        </p>
+        @if (dismissFlagSubmissionTarget.resource_name || dismissFlagSubmissionTarget.zip_or_city) {
+          <p class="modal-sub">
+            @if (dismissFlagSubmissionTarget.resource_name) {
+              <strong>{{ dismissFlagSubmissionTarget.resource_name }}</strong>
+            }
+            @if (dismissFlagSubmissionTarget.resource_name && dismissFlagSubmissionTarget.zip_or_city) {
+              <span> · </span>
+            }
+            @if (dismissFlagSubmissionTarget.zip_or_city) {
+              {{ dismissFlagSubmissionTarget.zip_or_city }}
+            }
+          </p>
+        }
+        @if (adminSubmissionActionError) {
+          <p class="rr-form-error">{{ adminSubmissionActionError }}</p>
+        }
+        <div class="modal-row">
+          <button type="button" class="btn-cancel" (click)="closeDismissFlagModal()" [disabled]="!!adminFlaggedSubmissionDeletingId">
+            Cancel
+          </button>
+          <button
+            type="button"
+            class="btn-primary"
+            (click)="confirmDismissFlag()"
+            [disabled]="!!adminFlaggedSubmissionDeletingId"
+          >
+            {{ adminFlaggedSubmissionDeletingId ? 'Removing…' : 'Yes, dismiss flag' }}
           </button>
         </div>
       </div>

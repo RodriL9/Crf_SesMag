@@ -411,6 +411,8 @@ export class AppComponent implements OnInit, OnDestroy {
   adminDeleteMemberPassword = '';
   adminDeleteMemberError = '';
   showAdminDeleteMemberPassword = false;
+  showDismissFlagModal = false;
+  dismissFlagSubmissionTarget: AdminSubmissionRow | null = null;
   adminEditForm: AdminEditResourceForm = {
     name: '',
     address: '',
@@ -1095,8 +1097,8 @@ export class AppComponent implements OnInit, OnDestroy {
       });
   }
 
-  /** Remove the flag submission only (pending, approved, or rejected). The listing stays in the database. */
-  deleteAdminFlagSubmissionRecord(submission: AdminSubmissionRow): void {
+  /** Opens in-app confirmation before removing the flag submission only (listing stays in the database). */
+  openDismissFlagModal(submission: AdminSubmissionRow): void {
     if (!this.currentUser || this.currentUser.role !== 'admin' || !this.authToken) {
       this.adminSubmissionActionError = 'Admin session required.';
       return;
@@ -1105,11 +1107,29 @@ export class AppComponent implements OnInit, OnDestroy {
       this.adminSubmissionActionError = 'Only flagged-resource records can be removed here.';
       return;
     }
+    this.adminSubmissionActionError = '';
+    this.dismissFlagSubmissionTarget = submission;
+    this.showDismissFlagModal = true;
+  }
 
-    const confirmed = globalThis.confirm(
-      'Remove this flag from the list? The resource listing itself is not deleted. This cannot be undone.'
-    );
-    if (!confirmed) return;
+  closeDismissFlagModal(): void {
+    if (this.adminFlaggedSubmissionDeletingId) {
+      return;
+    }
+    this.showDismissFlagModal = false;
+    this.dismissFlagSubmissionTarget = null;
+  }
+
+  /** Remove the flag submission after user confirms in the modal. */
+  confirmDismissFlag(): void {
+    const submission = this.dismissFlagSubmissionTarget;
+    if (!submission || !this.currentUser || this.currentUser.role !== 'admin' || !this.authToken) {
+      return;
+    }
+    if (!this.isFlagSubmission(submission)) {
+      this.adminSubmissionActionError = 'Only flagged-resource records can be removed here.';
+      return;
+    }
 
     this.adminFlaggedSubmissionDeletingId = submission.id;
     this.adminSubmissionActionMessage = '';
@@ -1128,6 +1148,8 @@ export class AppComponent implements OnInit, OnDestroy {
           if (this.adminEditingSubmissionId === submission.id) {
             this.cancelAdminResourceEdit();
           }
+          this.showDismissFlagModal = false;
+          this.dismissFlagSubmissionTarget = null;
         },
         error: (err) => {
           this.adminFlaggedSubmissionDeletingId = null;
