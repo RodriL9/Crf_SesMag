@@ -20,6 +20,7 @@ async function listUserNotifications(req, res, next) {
        JOIN resources r ON r.id = sr.resource_id
        LEFT JOIN categories c ON c.id = r.category_id
        WHERE sr.user_id = $1
+        AND ral.created_at >= sr.created_at
        ORDER BY ral.created_at DESC
        LIMIT 100;`,
       [req.user.sub]

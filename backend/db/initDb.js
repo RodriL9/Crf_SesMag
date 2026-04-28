@@ -14,9 +14,17 @@ const pool = new Pool({
 async function initDb() {
   const client = await pool.connect();
   try {
-    const schemaPath = path.resolve(__dirname, 'schema/001_schema.sql');
-    const schemaSql = fs.readFileSync(schemaPath, 'utf8');
-    await client.query(schemaSql);
+    const schemaDir = path.resolve(__dirname, 'schema');
+    const files = fs
+      .readdirSync(schemaDir)
+      .filter((name) => name.endsWith('.sql'))
+      .sort();
+    for (const file of files) {
+      const schemaPath = path.join(schemaDir, file);
+      const schemaSql = fs.readFileSync(schemaPath, 'utf8');
+      await client.query(schemaSql);
+      console.log(`Applied schema: ${file}`);
+    }
     console.log('Database initialized successfully.');
   } catch (error) {
     console.error('Failed to initialize database:', error.message);

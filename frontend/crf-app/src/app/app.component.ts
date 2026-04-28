@@ -15,6 +15,7 @@ type CategoryOption = {
 type Resource = {
   id: string;
   name: string;
+  description?: string | null;
   address: string;
   city: string | null;
   state?: string | null;
@@ -27,6 +28,9 @@ type Resource = {
   latitude?: number | string | null;
   longitude?: number | string | null;
   category_name: string | null;
+  category_id?: number | null;
+  save_count?: number | string | null;
+  flag_count?: number | string | null;
 };
 
 type ResourceTag = {
@@ -61,6 +65,7 @@ type ApiNotificationRow = {
   notification_id: string;
   action: 'created' | 'updated' | 'verified' | 'deleted' | string;
   created_at: string;
+  changes: Record<string, unknown> | null;
   resource_id: string;
   resource_name: string;
   address: string | null;
@@ -76,6 +81,22 @@ type FlaggedResourceItem = {
   reason: string;
   flaggedAt: string;
   flaggedDateLabel: string;
+  submissionId?: string;
+  status?: 'pending' | 'corrected' | 'declined';
+  statusLabel?: string;
+  handledSummary?: string;
+  adminReviewNote?: string | null;
+};
+
+type UserSubmissionStatusRow = {
+  id: string;
+  status: 'pending' | 'approved' | 'rejected' | 'cancelled';
+  review_notes?: string | null;
+  updated_at: string;
+  reviewed_at?: string | null;
+  reviewer_name?: string | null;
+  reviewer_email?: string | null;
+  submission_kind: 'flag' | 'zip_request';
 };
 
 type UpdateRequestStatus = 'pending' | 'reviewed' | 'declined';
@@ -87,6 +108,110 @@ type UpdateRequestItem = {
   submittedAt: string;
   submittedDateLabel: string;
   status: UpdateRequestStatus;
+  handledSummary?: string;
+  adminReviewNote?: string | null;
+};
+
+type AdminSubmissionRow = {
+  id: string;
+  submitter_name?: string | null;
+  submitter_contact?: string | null;
+  notes?: string | null;
+  resource_name?: string | null;
+  category_id?: number | null;
+  category_name?: string | null;
+  review_notes?: string | null;
+  reviewed_at?: string | null;
+  reviewer_name?: string | null;
+  reviewer_email?: string | null;
+  zip_or_city: string;
+  status: 'pending' | 'approved' | 'rejected' | 'cancelled';
+  created_at: string;
+  updated_at?: string | null;
+};
+
+type UserAdminMessage = {
+  id: string;
+  body: string;
+  created_at: string;
+  sender_user_id: string;
+  sender_name?: string | null;
+  sender_role?: string;
+};
+
+type UserMessagesApiResponse = {
+  messages: UserAdminMessage[];
+  threadArchivedByStaff: boolean;
+};
+
+type AdminInboxMessageRow = {
+  id: string;
+  body: string;
+  created_at: string;
+  thread_user_id: string;
+  sender_user_id: string;
+  thread_user_email: string;
+  thread_user_first_name?: string | null;
+  thread_user_last_name?: string | null;
+  sender_name?: string | null;
+  sender_email?: string | null;
+  sender_role: string;
+};
+
+type AdminMessageThreadSummary = {
+  threadUserId: string;
+  label: string;
+  lastMessageAt: string;
+  preview: string;
+};
+
+type AdminUserAccount = {
+  id: string;
+  first_name?: string | null;
+  last_name?: string | null;
+  email: string;
+  role: 'user' | 'admin';
+  is_verified: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+type AccountProfileResponse = {
+  id: string;
+  email: string;
+  first_name?: string | null;
+  last_name?: string | null;
+  name: string;
+  role: string;
+  isEmailVerified: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+type AdminZipCategoryKey = 'food' | 'health' | 'jobs' | 'housing' | 'legal' | 'government' | 'all';
+
+type AdminEditResourceForm = {
+  name: string;
+  address: string;
+  city: string;
+  state: string;
+  zipCode: string;
+  phoneNumber: string;
+  hoursOfOperation: string;
+  website: string;
+  isVerified: boolean;
+};
+
+type AdminZipSummaryRow = {
+  zip: string;
+  city: string;
+  food: number;
+  health: number;
+  jobs: number;
+  housing: number;
+  legal: number;
+  government: number;
+  total: number;
 };
 
 @Component({
@@ -120,7 +245,15 @@ export class AppComponent implements OnInit, OnDestroy {
   hasSearched = false;
   selectedCategoryId: number | null = null;
   selectedCategoryLabel = '';
-  viewMode: 'landing' | 'categoryResults' | 'savedResources' | 'login' | 'forgotPassword' | 'register' | 'userDashboard' = 'landing';
+  viewMode:
+    | 'landing'
+    | 'categoryResults'
+    | 'savedResources'
+    | 'login'
+    | 'forgotPassword'
+    | 'register'
+    | 'userDashboard'
+    | 'adminDashboard' = 'landing';
   expandedResourceId: string | null = null;
   lastSearchTerm = '';
   resolvedCityName = '';
@@ -128,7 +261,14 @@ export class AppComponent implements OnInit, OnDestroy {
   filteredResults: Resource[] = [];
   savedResources: Resource[] = [];
   currentUser: AuthUser | null = null;
-  dashboardTab: 'dashboard' | 'notifications' | 'saved' | 'flagged' | 'updateRequests' | 'settings' = 'dashboard';
+  dashboardTab:
+    | 'dashboard'
+    | 'notifications'
+    | 'saved'
+    | 'flagged'
+    | 'updateRequests'
+    | 'messages'
+    | 'settings' = 'dashboard';
   authToken = '';
   authMessage = '';
   isSyncingSaved = false;
@@ -137,6 +277,9 @@ export class AppComponent implements OnInit, OnDestroy {
   flagReason = '';
   flagError = '';
   flagSuccess = '';
+  verifyRequestResourceId: string | null = null;
+  verifyRequestError = '';
+  verifyRequestSuccess = '';
   flaggedResources: FlaggedResourceItem[] = [];
   updateRequests: UpdateRequestItem[] = [];
   settingsFirstName = '';
@@ -155,6 +298,20 @@ export class AppComponent implements OnInit, OnDestroy {
   updateRequestZip = '';
   updateRequestError = '';
   updateRequestSuccess = '';
+  userAdminMessages: UserAdminMessage[] = [];
+  /** Latest message time (ISO) the member has seen in the staff thread; drives unread badge. */
+  private staffThreadLastReadAt: string | null = null;
+  /** True when admin archived this member's thread (member sees closed-chat UI). */
+  userThreadArchivedByStaff = false;
+  /** Member tapped "Start a new message" while thread was archived. */
+  userChoseContinueStaffChat = false;
+  /** Member Messages tab: summary row first; tap to open full thread. */
+  userStaffThreadExpanded = false;
+  userMessageBody = '';
+  userMessageError = '';
+  userMessageSuccess = '';
+  isLoadingUserMessages = false;
+  isSendingUserMessage = false;
   showZipResourceRequestPrompt = false;
   zipResourceRequestDecision: 'yes' | 'no' | '' = '';
   zipResourceRequestError = '';
@@ -189,6 +346,82 @@ export class AppComponent implements OnInit, OnDestroy {
     notes: '',
   };
   dashboardNotifications: NotificationItem[] = [];
+  /** Audit log IDs the user chose to hide (persisted per account in localStorage). */
+  private dismissedNotificationIds = new Set<string>();
+  /** ZIP requests the user hid from their dashboard after review (local only). */
+  private userZipRequestArchivedViewIds = new Set<string>();
+  adminTab: 'resources' | 'messages' | 'zipRequests' | 'flagged' | 'accounts' | 'settings' = 'resources';
+  adminInboxMessages: AdminInboxMessageRow[] = [];
+  /** Active vs archived member threads (admin inbox). */
+  adminMessagesScope: 'active' | 'archived' = 'active';
+  /** ZIP request queue: active (non-cancelled) vs user-cancelled archive. */
+  adminZipRequestsScope: 'active' | 'archive' = 'active';
+  /** Conversation count for active inbox only (sidebar badge). */
+  adminMessagesActiveThreadCount = 0;
+  isLoadingAdminMessages = false;
+  adminSelectedThreadUserId: string | null = null;
+  adminReplyBody = '';
+  adminReplyError = '';
+  adminReplySuccess = '';
+  isSendingAdminReply = false;
+  isArchivingAdminThread = false;
+  adminArchiveThreadError = '';
+  /** Set when GET /admin/messages fails (e.g. DB or network). */
+  adminMessagesLoadError = '';
+  adminAccountProfile: AccountProfileResponse | null = null;
+  adminAccountProfileError = '';
+  isLoadingAdminAccountProfile = false;
+  adminSearchTerm = '';
+  adminZipImportCode = '';
+  adminResources: Resource[] = [];
+  adminZipRows: AdminZipSummaryRow[] = [];
+  adminSubmissions: AdminSubmissionRow[] = [];
+  adminUsers: AdminUserAccount[] = [];
+  adminDashboardError = '';
+  isAdminLoading = false;
+  isAdminImportingZip = false;
+  adminZipImportProgress = 0;
+  adminZipImportElapsedSeconds = 0;
+  adminZipImportError = '';
+  adminZipImportSuccess = '';
+  adminSelectedZip = '';
+  adminSelectedCategoryKey: AdminZipCategoryKey = 'all';
+  adminSelectedCategoryLabel = '';
+  adminSelectedResources: Resource[] = [];
+  adminExpandedFlagResourceId: string | null = null;
+  adminExpandedResourceDetailId: string | null = null;
+  adminEditingResourceId: string | null = null;
+  adminEditingSubmissionId: string | null = null;
+  adminEditPanelCollapsed = false;
+  adminEditError = '';
+  adminEditSuccess = '';
+  isAdminSavingEdit = false;
+  adminSubmissionSavingId: string | null = null;
+  adminZipSubmissionDeletingId: string | null = null;
+  adminFlaggedSubmissionDeletingId: string | null = null;
+  adminSubmissionActionMessage = '';
+  adminSubmissionActionError = '';
+  adminReviewNotes: Record<string, string> = {};
+  adminExpandedUserId: string | null = null;
+  adminUserDeletingId: string | null = null;
+  adminUserActionMessage = '';
+  adminUserActionError = '';
+  showAdminDeleteMemberModal = false;
+  adminDeleteMemberTarget: AdminUserAccount | null = null;
+  adminDeleteMemberPassword = '';
+  adminDeleteMemberError = '';
+  showAdminDeleteMemberPassword = false;
+  adminEditForm: AdminEditResourceForm = {
+    name: '',
+    address: '',
+    city: '',
+    state: 'NJ',
+    zipCode: '',
+    phoneNumber: '',
+    hoursOfOperation: '',
+    website: '',
+    isVerified: false,
+  };
 
   readonly categories = [
     { id: 1, label: 'Food', sub: 'Pantries & meals', icon: '🍎', className: 'card-food' },
@@ -207,20 +440,63 @@ export class AppComponent implements OnInit, OnDestroy {
     this.isOffline = false;
   };
 
+  /** Re-sync flagged / ZIP submission status when the user returns to the tab. */
+  private readonly onDocumentVisibility = (): void => {
+    if (document.visibilityState !== 'visible') return;
+    if (!this.currentUser || !this.authToken || this.currentUser.role !== 'user') return;
+    if (this.viewMode !== 'userDashboard') return;
+    if (this.dashboardTab !== 'flagged' && this.dashboardTab !== 'updateRequests') return;
+    this.refreshMySubmissionsFromServer();
+  };
+
+  private adminZipImportTimer: ReturnType<typeof setInterval> | null = null;
+
   ngOnInit(): void {
     this.loadAuthSession();
     this.loadSavedResources();
     this.loadFlaggedResources();
     this.loadUpdateRequests();
     this.refreshRecentSearches();
+    if (this.currentUser && this.authToken) {
+      this.loadDashboardNotifications();
+      if (this.currentUser.role === 'user') {
+        this.loadUserAdminMessages();
+        this.refreshMySubmissionsFromServer();
+      }
+    }
     this.isOffline = !navigator.onLine;
     window.addEventListener('offline', this.onOfflineHandler);
     window.addEventListener('online', this.onOnlineHandler);
+    document.addEventListener('visibilitychange', this.onDocumentVisibility);
   }
 
   ngOnDestroy(): void {
+    this.stopAdminZipImportTimer();
     window.removeEventListener('offline', this.onOfflineHandler);
     window.removeEventListener('online', this.onOnlineHandler);
+    document.removeEventListener('visibilitychange', this.onDocumentVisibility);
+  }
+
+  private startAdminZipImportTimer(): void {
+    this.stopAdminZipImportTimer();
+    this.adminZipImportProgress = 6;
+    this.adminZipImportElapsedSeconds = 0;
+    this.adminZipImportTimer = setInterval(() => {
+      this.adminZipImportElapsedSeconds += 1;
+      if (this.adminZipImportProgress < 55) {
+        this.adminZipImportProgress += 5;
+      } else if (this.adminZipImportProgress < 80) {
+        this.adminZipImportProgress += 3;
+      } else if (this.adminZipImportProgress < 92) {
+        this.adminZipImportProgress += 1;
+      }
+    }, 500);
+  }
+
+  private stopAdminZipImportTimer(): void {
+    if (!this.adminZipImportTimer) return;
+    clearInterval(this.adminZipImportTimer);
+    this.adminZipImportTimer = null;
   }
 
   searchByZip(): void {
@@ -345,9 +621,6 @@ export class AppComponent implements OnInit, OnDestroy {
         })
       : [];
     this.viewMode = 'categoryResults';
-    if (!this.suggestionForm.categoryId) {
-      this.suggestionForm.categoryId = categoryId;
-    }
   }
 
   openCreateAccount(): void {
@@ -371,6 +644,54 @@ export class AppComponent implements OnInit, OnDestroy {
     this.authMessage = '';
     this.dashboardTab = 'dashboard';
     this.viewMode = 'userDashboard';
+    this.loadDashboardNotifications();
+    if (this.currentUser.role === 'user') {
+      this.loadUserAdminMessages();
+      this.refreshMySubmissionsFromServer();
+    }
+  }
+
+  openAdminDashboard(): void {
+    if (!this.currentUser || this.currentUser.role !== 'admin') {
+      this.openLogin();
+      return;
+    }
+    this.adminTab = 'resources';
+    this.viewMode = 'adminDashboard';
+    this.adminDashboardError = '';
+    this.loadAdminDashboardData();
+  }
+
+  openAdminTab(tab: 'resources' | 'messages' | 'zipRequests' | 'flagged' | 'accounts' | 'settings'): void {
+    this.adminTab = tab;
+    this.adminDashboardError = '';
+    this.adminSubmissionActionMessage = '';
+    this.adminSubmissionActionError = '';
+    if (tab === 'resources') {
+      this.loadAdminResources();
+      return;
+    }
+    if (tab === 'messages') {
+      this.adminMessagesScope = 'active';
+      this.adminMessagesLoadError = '';
+      this.loadAdminInboxMessages();
+      return;
+    }
+    if (tab === 'zipRequests' || tab === 'flagged') {
+      if (tab === 'zipRequests') {
+        this.adminZipRequestsScope = 'active';
+      }
+      this.loadAdminSubmissions();
+      if (tab === 'flagged') {
+        this.loadAdminResources();
+      }
+    }
+    if (tab === 'accounts') {
+      this.loadAdminUsers();
+    }
+    if (tab === 'settings') {
+      this.loadAdminAccountProfile();
+    }
   }
 
   getDashboardUserName(): string {
@@ -390,6 +711,638 @@ export class AppComponent implements OnInit, OnDestroy {
 
   getDashboardUserSubLabel(): string {
     return this.currentUser?.role === 'admin' ? 'Admin' : 'Member';
+  }
+
+  get adminResourceTotalCount(): number {
+    return this.adminResources.length;
+  }
+
+  get adminPendingSubmissionCount(): number {
+    return this.adminSubmissions.filter((item) => item.status === 'pending').length;
+  }
+
+  get adminPendingFlaggedSubmissions(): AdminSubmissionRow[] {
+    return this.adminSubmissions.filter((item) => item.status === 'pending' && this.isFlagSubmission(item));
+  }
+
+  get adminCompletedFlaggedSubmissions(): AdminSubmissionRow[] {
+    return this.adminSubmissions
+      .filter((item) => item.status !== 'pending' && this.isFlagSubmission(item))
+      .sort((a, b) => {
+        const ta = new Date(a.reviewed_at || a.updated_at || 0).getTime();
+        const tb = new Date(b.reviewed_at || b.updated_at || 0).getTime();
+        return tb - ta;
+      });
+  }
+
+  get adminZipCodeRequests(): AdminSubmissionRow[] {
+    return this.adminSubmissions.filter((item) => this.isZipCodeRequest(item));
+  }
+
+  get adminZipCodeRequestsActive(): AdminSubmissionRow[] {
+    return this.adminZipCodeRequests.filter((item) => item.status !== 'cancelled');
+  }
+
+  get adminZipCodeRequestsCancelled(): AdminSubmissionRow[] {
+    return this.adminZipCodeRequests.filter((item) => item.status === 'cancelled');
+  }
+
+  get adminZipRequestsListForScope(): AdminSubmissionRow[] {
+    return this.adminZipRequestsScope === 'archive'
+      ? this.adminZipCodeRequestsCancelled
+      : this.adminZipCodeRequestsActive;
+  }
+
+  get adminPendingZipCodeRequests(): AdminSubmissionRow[] {
+    return this.adminZipCodeRequestsActive.filter((item) => item.status === 'pending');
+  }
+
+  setAdminZipRequestsScope(scope: 'active' | 'archive'): void {
+    this.adminZipRequestsScope = scope;
+  }
+
+  get adminUserCount(): number {
+    return this.adminUsers.length;
+  }
+
+  get adminVisibleZipRows(): AdminZipSummaryRow[] {
+    const term = this.adminSearchTerm.trim().toLowerCase();
+    if (!term) return this.adminZipRows;
+    return this.adminZipRows.filter((row) => row.zip.includes(term) || row.city.toLowerCase().includes(term));
+  }
+
+  viewAdminResourcesForZipCategory(zip: string, category: AdminZipCategoryKey): void {
+    const normalizedZip = zip.trim();
+    if (!normalizedZip) return;
+
+    const filtered = this.filterAdminResourcesByZipCategory(normalizedZip, category);
+
+    const labelMap: Record<AdminZipCategoryKey, string> = {
+      food: 'Food',
+      health: 'Health',
+      jobs: 'Jobs',
+      housing: 'Housing',
+      legal: 'Legal',
+      government: 'Government',
+      all: 'All categories',
+    };
+
+    this.adminSelectedZip = normalizedZip;
+    this.adminSelectedCategoryKey = category;
+    this.adminSelectedCategoryLabel = labelMap[category];
+    this.adminSelectedResources = filtered;
+    this.adminExpandedFlagResourceId = null;
+    this.adminExpandedResourceDetailId = null;
+    this.cancelAdminResourceEdit();
+  }
+
+  backToAdminZipTable(): void {
+    this.adminSelectedZip = '';
+    this.adminSelectedCategoryKey = 'all';
+    this.adminSelectedCategoryLabel = '';
+    this.adminSelectedResources = [];
+    this.adminExpandedFlagResourceId = null;
+    this.adminExpandedResourceDetailId = null;
+    this.cancelAdminResourceEdit();
+  }
+
+  toggleAdminResourceDetails(resourceId: string): void {
+    this.adminExpandedResourceDetailId =
+      this.adminExpandedResourceDetailId === resourceId ? null : resourceId;
+  }
+
+  getAdminSaveCount(resource: Resource): number {
+    const value = Number(resource.save_count ?? 0);
+    return Number.isFinite(value) ? value : 0;
+  }
+
+  getAdminFlagCount(resource: Resource): number {
+    const value = Number(resource.flag_count ?? 0);
+    return Number.isFinite(value) ? value : 0;
+  }
+
+  getAdminPendingFlags(resource: Resource): AdminSubmissionRow[] {
+    return this.adminSubmissions.filter((item) => {
+      if (item.status !== 'pending') return false;
+      const notes = (item.notes || '').trim();
+      return notes.startsWith(`FLAGGED RESOURCE (${resource.id})`);
+    });
+  }
+
+  getAdminPendingFlagCount(resource: Resource): number {
+    return this.getAdminPendingFlags(resource).length;
+  }
+
+  getAdminFlagReason(flag: AdminSubmissionRow): string {
+    const raw = (flag.notes || '').trim();
+    const marker = ': ';
+    const markerIndex = raw.indexOf(marker);
+    if (markerIndex === -1) return raw || 'No note provided.';
+    return raw.slice(markerIndex + marker.length).trim() || 'No note provided.';
+  }
+
+  toggleAdminPendingFlags(resourceId: string): void {
+    this.adminExpandedFlagResourceId = this.adminExpandedFlagResourceId === resourceId ? null : resourceId;
+  }
+
+  isFlagSubmission(submission: AdminSubmissionRow): boolean {
+    const note = (submission.notes || '').trim();
+    return note.startsWith('FLAGGED RESOURCE (');
+  }
+
+  isVerificationSubmission(submission: AdminSubmissionRow): boolean {
+    const note = (submission.notes || '').trim().toUpperCase();
+    return note.startsWith('VERIFY REQUEST') || note.includes('VERIFICATION REQUEST');
+  }
+
+  isZipCodeRequest(submission: AdminSubmissionRow): boolean {
+    if (this.isFlagSubmission(submission)) return false;
+    if (this.isVerificationSubmission(submission)) return false;
+    const zipOrCity = (submission.zip_or_city || '').trim();
+    const isZip = /^\d{5}$/.test(zipOrCity);
+    if (!isZip) return false;
+    return true;
+  }
+
+  getAdminSubmissionRequesterName(submission: AdminSubmissionRow): string {
+    const name = (submission.submitter_name || '').trim();
+    return name || 'Anonymous user';
+  }
+
+  getAdminSubmissionCategoryLabel(submission: AdminSubmissionRow): string {
+    if (submission.category_name) {
+      return submission.category_name;
+    }
+    if (
+      (submission.category_id == null || submission.category_id === undefined) &&
+      !this.isFlagSubmission(submission) &&
+      !this.isVerificationSubmission(submission)
+    ) {
+      return 'All resource types';
+    }
+    return 'Uncategorized';
+  }
+
+  getAdminSubmissionRequestText(submission: AdminSubmissionRow): string {
+    const raw = (submission.notes || '').trim();
+    if (!raw) {
+      return `Requested resources for ${submission.zip_or_city}.`;
+    }
+
+    const withoutEmail = raw.replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[hidden]');
+    const withoutIds = withoutEmail.replace(/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}/g, '[resource]');
+    const cleaned = withoutIds
+      .replace(/^VERIFY REQUEST \(\[resource\]\) by \[hidden\]:\s*/i, 'Requested verification: ')
+      .replace(/^FLAGGED RESOURCE \(\[resource\]\) by \[hidden\]:\s*/i, 'Flagged issue: ')
+      .trim();
+
+    return cleaned || `Requested resources for ${submission.zip_or_city}.`;
+  }
+
+  getAdminReviewNote(submissionId: string): string {
+    return this.adminReviewNotes[submissionId] || '';
+  }
+
+  setAdminReviewNote(submissionId: string, value: string): void {
+    this.adminReviewNotes[submissionId] = value;
+  }
+
+  quickImportAdminZipFromRequest(submission: AdminSubmissionRow): void {
+    const zipCode = (submission.zip_or_city || '').trim();
+    if (!/^\d{5}$/.test(zipCode)) {
+      this.adminZipImportError = 'This request does not include a valid 5-digit ZIP code.';
+      this.adminZipImportSuccess = '';
+      return;
+    }
+
+    this.adminZipImportCode = zipCode;
+    this.importAdminZipResources(submission);
+  }
+
+  importAdminZipResources(sourceSubmission?: AdminSubmissionRow): void {
+    this.adminZipImportError = '';
+    this.adminZipImportSuccess = '';
+    const zipCode = this.adminZipImportCode.trim();
+
+    if (!/^\d{5}$/.test(zipCode)) {
+      this.adminZipImportError = 'Enter a valid 5-digit US ZIP code.';
+      return;
+    }
+    if (!this.currentUser || this.currentUser.role !== 'admin' || !this.authToken) {
+      this.adminZipImportError = 'Admin session required.';
+      return;
+    }
+
+    this.isAdminImportingZip = true;
+    this.startAdminZipImportTimer();
+    this.http
+      .post<{ message: string; insertedCount: number; updatedCount?: number; skippedCount: number }>(
+        `${this.apiBaseUrl}/admin/resources/import-zip`,
+        { zipCode },
+        { headers: this.getAuthHeaders() }
+      )
+      .subscribe({
+        next: (response) => {
+          this.stopAdminZipImportTimer();
+          this.adminZipImportProgress = 100;
+          this.isAdminImportingZip = false;
+          const updatedCount = Number(response.updatedCount || 0);
+          this.adminZipImportSuccess =
+            `${response.message} Added ${response.insertedCount} resources, updated ${updatedCount}, skipped ${response.skippedCount}.`;
+          this.loadAdminResources();
+          if (sourceSubmission && sourceSubmission.status === 'pending') {
+            this.markZipRequestCompleted(sourceSubmission.id);
+          } else {
+            this.loadAdminSubmissions();
+          }
+        },
+        error: (err) => {
+          this.stopAdminZipImportTimer();
+          this.adminZipImportProgress = 0;
+          this.adminZipImportElapsedSeconds = 0;
+          this.isAdminImportingZip = false;
+          this.adminZipImportError = err?.error?.error || 'Could not import this ZIP right now.';
+        },
+      });
+  }
+
+  private markZipRequestCompleted(submissionId: string): void {
+    if (!this.authToken) {
+      this.loadAdminSubmissions();
+      return;
+    }
+
+    this.http
+      .patch<AdminSubmissionRow>(
+        `${this.apiBaseUrl}/admin/submissions/${submissionId}/status`,
+        { status: 'approved', reviewNotes: 'Completed via ZIP import.' },
+        { headers: this.getAuthHeaders() }
+      )
+      .subscribe({
+        next: (updated) => {
+          this.adminSubmissions = this.adminSubmissions.map((item) =>
+            item.id === submissionId ? { ...item, ...updated } : item
+          );
+          this.adminZipImportSuccess = `${this.adminZipImportSuccess} Request marked completed.`;
+        },
+        error: () => {
+          this.loadAdminSubmissions();
+        },
+      });
+  }
+
+  getAdminUserDisplayName(user: AdminUserAccount): string {
+    const fullName = `${user.first_name || ''} ${user.last_name || ''}`.trim();
+    if (fullName) return fullName;
+    const emailPrefix = (user.email || '').split('@')[0];
+    return emailPrefix || 'User';
+  }
+
+  toggleAdminUserDetails(userId: string): void {
+    this.adminExpandedUserId = this.adminExpandedUserId === userId ? null : userId;
+  }
+
+  openAdminDeleteUserModal(user: AdminUserAccount): void {
+    if (!this.currentUser || this.currentUser.role !== 'admin' || !this.authToken) {
+      this.adminUserActionError = 'Admin session required.';
+      return;
+    }
+    this.adminDeleteMemberError = '';
+    this.adminDeleteMemberPassword = '';
+    this.adminDeleteMemberTarget = user;
+    this.showAdminDeleteMemberModal = true;
+  }
+
+  closeAdminDeleteUserModal(): void {
+    if (this.adminUserDeletingId) return;
+    this.showAdminDeleteMemberModal = false;
+    this.adminDeleteMemberTarget = null;
+    this.adminDeleteMemberPassword = '';
+    this.adminDeleteMemberError = '';
+  }
+
+  confirmAdminDeleteUser(): void {
+    const user = this.adminDeleteMemberTarget;
+    if (!this.currentUser || this.currentUser.role !== 'admin' || !this.authToken) {
+      this.adminUserActionError = 'Admin session required.';
+      return;
+    }
+    if (!user) return;
+
+    const pwd = this.adminDeleteMemberPassword.trim();
+    if (!pwd) {
+      this.adminDeleteMemberError = 'Enter your admin password to confirm.';
+      return;
+    }
+
+    this.adminUserDeletingId = user.id;
+    this.adminUserActionError = '';
+    this.adminUserActionMessage = '';
+    this.adminDeleteMemberError = '';
+
+    this.http
+      .delete<{ message?: string }>(`${this.apiBaseUrl}/admin/users/${user.id}`, {
+        headers: this.getAuthHeaders(),
+        body: { currentPassword: pwd },
+      })
+      .subscribe({
+        next: (response) => {
+          this.adminUsers = this.adminUsers.filter((item) => item.id !== user.id);
+          this.adminUserDeletingId = null;
+          this.adminUserActionMessage = response.message || 'User deleted.';
+          if (this.adminExpandedUserId === user.id) {
+            this.adminExpandedUserId = null;
+          }
+          this.closeAdminDeleteUserModal();
+        },
+        error: (err) => {
+          this.adminUserDeletingId = null;
+          this.adminDeleteMemberError = err?.error?.error || 'Could not delete user account.';
+        },
+      });
+  }
+
+  deleteAdminZipSubmission(submission: AdminSubmissionRow): void {
+    if (!this.currentUser || this.currentUser.role !== 'admin' || !this.authToken) {
+      this.adminSubmissionActionError = 'Admin session required.';
+      return;
+    }
+
+    const confirmed = globalThis.confirm(
+      `Permanently remove the ZIP request for ${submission.zip_or_city}? This cannot be undone.`
+    );
+    if (!confirmed) return;
+
+    this.adminZipSubmissionDeletingId = submission.id;
+    this.adminSubmissionActionMessage = '';
+    this.adminSubmissionActionError = '';
+
+    this.http
+      .delete<{ message?: string }>(`${this.apiBaseUrl}/admin/submissions/${submission.id}`, {
+        headers: this.getAuthHeaders(),
+      })
+      .subscribe({
+        next: (response) => {
+          this.adminSubmissions = this.adminSubmissions.filter((item) => item.id !== submission.id);
+          this.adminZipSubmissionDeletingId = null;
+          this.adminSubmissionActionMessage = response.message || 'ZIP request removed.';
+          delete this.adminReviewNotes[submission.id];
+        },
+        error: (err) => {
+          this.adminZipSubmissionDeletingId = null;
+          this.adminSubmissionActionError = err?.error?.error || 'Could not remove this request.';
+        },
+      });
+  }
+
+  /** Remove the flag submission only (pending, approved, or rejected). The listing stays in the database. */
+  deleteAdminFlagSubmissionRecord(submission: AdminSubmissionRow): void {
+    if (!this.currentUser || this.currentUser.role !== 'admin' || !this.authToken) {
+      this.adminSubmissionActionError = 'Admin session required.';
+      return;
+    }
+    if (!this.isFlagSubmission(submission)) {
+      this.adminSubmissionActionError = 'Only flagged-resource records can be removed here.';
+      return;
+    }
+
+    const confirmed = globalThis.confirm(
+      'Remove this flag from the list? The resource listing itself is not deleted. This cannot be undone.'
+    );
+    if (!confirmed) return;
+
+    this.adminFlaggedSubmissionDeletingId = submission.id;
+    this.adminSubmissionActionMessage = '';
+    this.adminSubmissionActionError = '';
+
+    this.http
+      .delete<{ message?: string }>(`${this.apiBaseUrl}/admin/submissions/${submission.id}`, {
+        headers: this.getAuthHeaders(),
+      })
+      .subscribe({
+        next: (response) => {
+          this.adminSubmissions = this.adminSubmissions.filter((item) => item.id !== submission.id);
+          this.adminFlaggedSubmissionDeletingId = null;
+          this.adminSubmissionActionMessage = response.message || 'Flag record removed.';
+          delete this.adminReviewNotes[submission.id];
+          if (this.adminEditingSubmissionId === submission.id) {
+            this.cancelAdminResourceEdit();
+          }
+        },
+        error: (err) => {
+          this.adminFlaggedSubmissionDeletingId = null;
+          this.adminSubmissionActionError = err?.error?.error || 'Could not remove this flag record.';
+        },
+      });
+  }
+
+  updateAdminSubmissionStatus(submission: AdminSubmissionRow, status: 'approved' | 'rejected'): void {
+    if (!this.currentUser || this.currentUser.role !== 'admin' || !this.authToken) {
+      this.adminSubmissionActionError = 'Admin session required.';
+      return;
+    }
+
+    const reviewNotes = this.getAdminReviewNote(submission.id).trim();
+    if (status === 'rejected' && !reviewNotes) {
+      this.adminSubmissionActionError = 'Please add a review note before rejecting.';
+      return;
+    }
+
+    this.adminSubmissionSavingId = submission.id;
+    this.adminSubmissionActionMessage = '';
+    this.adminSubmissionActionError = '';
+
+    this.http
+      .patch<AdminSubmissionRow>(
+        `${this.apiBaseUrl}/admin/submissions/${submission.id}/status`,
+        {
+          status,
+          reviewNotes: reviewNotes || null,
+        },
+        { headers: this.getAuthHeaders() }
+      )
+      .subscribe({
+        next: (updated) => {
+          this.adminSubmissions = this.adminSubmissions.map((item) =>
+            item.id === submission.id ? { ...item, ...updated } : item
+          );
+          this.adminSubmissionSavingId = null;
+          this.adminSubmissionActionMessage = `Submission ${status}.`;
+          delete this.adminReviewNotes[submission.id];
+        },
+        error: (err) => {
+          this.adminSubmissionSavingId = null;
+          this.adminSubmissionActionError = err?.error?.error || 'Could not update submission status.';
+        },
+      });
+  }
+
+  openAdminResourceEditor(resource: Resource): void {
+    this.adminEditingResourceId = resource.id;
+    this.adminEditingSubmissionId = null;
+    this.adminEditPanelCollapsed = false;
+    this.adminEditError = '';
+    this.adminEditSuccess = '';
+    this.adminEditForm = {
+      name: resource.name || '',
+      address: resource.address || '',
+      city: resource.city || '',
+      state: resource.state || 'NJ',
+      zipCode: resource.zip_code || '',
+      phoneNumber: resource.phone_number || '',
+      hoursOfOperation: resource.hours_of_operation || '',
+      website: resource.website || '',
+      isVerified: Boolean(resource.is_verified),
+    };
+  }
+
+  cancelAdminResourceEdit(): void {
+    this.adminEditingResourceId = null;
+    this.adminEditingSubmissionId = null;
+    this.adminEditPanelCollapsed = false;
+    this.adminEditError = '';
+    this.adminEditSuccess = '';
+    this.isAdminSavingEdit = false;
+  }
+
+  toggleAdminEditPanelCollapsed(): void {
+    this.adminEditPanelCollapsed = !this.adminEditPanelCollapsed;
+  }
+
+  getFlaggedSubmissionResourceId(submission: AdminSubmissionRow): string | null {
+    const note = (submission.notes || '').trim();
+    const match = note.match(/FLAGGED RESOURCE \(([0-9a-fA-F-]{36})\)/);
+    return match ? match[1] : null;
+  }
+
+  getFlaggedSubmissionResource(submission: AdminSubmissionRow): Resource | null {
+    const resourceId = this.getFlaggedSubmissionResourceId(submission);
+    if (!resourceId) return null;
+    return this.adminResources.find((item) => item.id === resourceId) || null;
+  }
+
+  openAdminFlaggedResourceEditor(submission: AdminSubmissionRow, resource: Resource): void {
+    this.openAdminResourceEditor(resource);
+    this.adminEditingSubmissionId = submission.id;
+  }
+
+  submitFlaggedCorrection(submission: AdminSubmissionRow, resourceId: string): void {
+    this.adminEditError = '';
+    this.adminEditSuccess = '';
+    if (!this.currentUser || this.currentUser.role !== 'admin' || !this.authToken) {
+      this.adminEditError = 'Admin session required.';
+      return;
+    }
+
+    const name = this.adminEditForm.name.trim();
+    const address = this.adminEditForm.address.trim();
+    const zipCode = this.adminEditForm.zipCode.trim();
+    if (name.length < 2) {
+      this.adminEditError = 'Resource name must be at least 2 characters.';
+      return;
+    }
+    if (address.length < 4) {
+      this.adminEditError = 'Address must be at least 4 characters.';
+      return;
+    }
+    if (!zipCode) {
+      this.adminEditError = 'ZIP code is required.';
+      return;
+    }
+
+    const payload = {
+      name,
+      address,
+      city: this.adminEditForm.city.trim() || null,
+      state: this.adminEditForm.state.trim() || 'NJ',
+      zipCode,
+      phoneNumber: this.adminEditForm.phoneNumber.trim() || null,
+      hoursOfOperation: this.adminEditForm.hoursOfOperation.trim() || null,
+      website: this.adminEditForm.website.trim() || null,
+      isVerified: this.adminEditForm.isVerified,
+    };
+
+    this.isAdminSavingEdit = true;
+    this.http
+      .patch(`${this.apiBaseUrl}/admin/resources/${resourceId}`, payload, { headers: this.getAuthHeaders() })
+      .subscribe({
+        next: () => {
+          this.isAdminSavingEdit = false;
+          this.adminEditSuccess = 'Resource corrected in database.';
+          this.loadAdminResources();
+          if (!this.getAdminReviewNote(submission.id).trim()) {
+            this.setAdminReviewNote(submission.id, 'Corrected by admin.');
+          }
+          this.updateAdminSubmissionStatus(submission, 'approved');
+          this.cancelAdminResourceEdit();
+        },
+        error: (err) => {
+          this.isAdminSavingEdit = false;
+          this.adminEditError = err?.error?.error || 'Could not update resource right now.';
+        },
+      });
+  }
+
+  submitAdminResourceEdit(resourceId: string): void {
+    this.adminEditError = '';
+    this.adminEditSuccess = '';
+
+    if (!this.currentUser || this.currentUser.role !== 'admin' || !this.authToken) {
+      this.adminEditError = 'Admin session required.';
+      return;
+    }
+
+    const name = this.adminEditForm.name.trim();
+    const address = this.adminEditForm.address.trim();
+    const zipCode = this.adminEditForm.zipCode.trim();
+    if (name.length < 2) {
+      this.adminEditError = 'Resource name must be at least 2 characters.';
+      return;
+    }
+    if (address.length < 4) {
+      this.adminEditError = 'Address must be at least 4 characters.';
+      return;
+    }
+    if (!zipCode) {
+      this.adminEditError = 'ZIP code is required.';
+      return;
+    }
+
+    const payload = {
+      name,
+      address,
+      city: this.adminEditForm.city.trim() || null,
+      state: this.adminEditForm.state.trim() || 'NJ',
+      zipCode,
+      phoneNumber: this.adminEditForm.phoneNumber.trim() || null,
+      hoursOfOperation: this.adminEditForm.hoursOfOperation.trim() || null,
+      website: this.adminEditForm.website.trim() || null,
+      isVerified: this.adminEditForm.isVerified,
+    };
+
+    this.isAdminSavingEdit = true;
+    this.http
+      .patch(`${this.apiBaseUrl}/admin/resources/${resourceId}`, payload, { headers: this.getAuthHeaders() })
+      .subscribe({
+        next: () => {
+          this.isAdminSavingEdit = false;
+          this.adminEditSuccess = 'Resource updated in database.';
+          this.loadAdminResources();
+        },
+        error: (err) => {
+          this.isAdminSavingEdit = false;
+          this.adminEditError = err?.error?.error || 'Could not update resource right now.';
+        },
+      });
+  }
+
+  private filterAdminResourcesByZipCategory(zip: string, category: AdminZipCategoryKey): Resource[] {
+    return this.adminResources.filter((resource) => {
+      const sameZip = (resource.zip_code || '').trim() === zip;
+      if (!sameZip) return false;
+      if (category === 'all') return true;
+      return (resource.category_name || '').toLowerCase() === category;
+    });
   }
 
   runDashboardSearch(): void {
@@ -469,41 +1422,60 @@ export class AppComponent implements OnInit, OnDestroy {
 
     const zipMatch = area.match(/\b\d{5}\b/);
     if (!zipMatch) {
-      this.zipResourceRequestError = 'Please enter a 5-digit ZIP code to submit this request.';
+      this.zipResourceRequestError = 'Use a 5-digit US ZIP code in your search to request resources.';
       return;
     }
     const zipLabel = zipMatch[0];
 
-    if (this.hasExistingZipRequest(zipLabel)) {
+    if (this.zipRequestOccupiesSlot(zipLabel)) {
       this.zipResourceRequestError = `A request for ZIP ${zipLabel} was already submitted.`;
       return;
     }
 
     const submittedAt = new Date().toISOString();
-    const item: UpdateRequestItem = {
-      id: `zipsearch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      resource: {
-        id: `zipsearch-resource-${Date.now()}`,
-        name: `For ZIP ${zipLabel}`,
-        address: `Requested service area ${area}`,
-        city: null,
-        state: 'NJ',
-        zip_code: zipLabel,
-        phone_number: null,
-        category_name: null,
-      },
-      note: `Requested all resource types for ZIP ${zipLabel}.`,
-      submittedAt,
-      submittedDateLabel: this.getFlaggedDateLabel(submittedAt),
-      status: 'pending',
-    };
-
-    this.updateRequests = [item, ...this.updateRequests];
-    this.persistUpdateRequests();
-
-    this.zipResourceRequestSuccess = 'Request submitted and added to Update Requests.';
-    this.zipResourceRequestDecision = '';
-    this.showZipResourceRequestPrompt = false;
+    const note = `Requested all resource types for ZIP ${zipLabel}.`;
+    const requestOptions = this.currentUser && this.authToken ? { headers: this.getAuthHeaders() } : {};
+    this.http
+      .post<{ submission?: { id?: string; status?: 'pending' | 'approved' | 'rejected'; created_at?: string } }>(
+        `${this.apiBaseUrl}/submissions`,
+        {
+          zipOrCity: zipLabel,
+          categoryId: 6,
+          resourceName: `For ZIP ${zipLabel}`,
+          notes: note,
+        },
+        requestOptions
+      )
+      .subscribe({
+        next: (response) => {
+          const item: UpdateRequestItem = {
+            id: response.submission?.id || `zipsearch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            resource: {
+              id: `zipsearch-resource-${Date.now()}`,
+              name: `For ZIP ${zipLabel}`,
+              address: `Requested service area ${area}`,
+              city: null,
+              state: 'NJ',
+              zip_code: zipLabel,
+              phone_number: null,
+              category_name: null,
+            },
+            note,
+            submittedAt,
+            submittedDateLabel: this.getFlaggedDateLabel(submittedAt),
+            status: 'pending',
+          };
+          this.updateRequests = [item, ...this.updateRequests];
+          this.persistUpdateRequests();
+          this.zipResourceRequestSuccess = 'Request submitted and added to Zip/City Requests.';
+          this.zipResourceRequestDecision = '';
+          this.showZipResourceRequestPrompt = false;
+        },
+        error: (err) => {
+          this.zipResourceRequestError =
+            err?.error?.error || 'Could not submit ZIP request right now. Please try again.';
+        },
+      });
   }
 
   openDashboardCategory(category: string, categoryId: number): void {
@@ -529,9 +1501,19 @@ export class AppComponent implements OnInit, OnDestroy {
     this.loadDashboardNotifications();
   }
 
+  dismissDashboardNotification(notificationId: string, event: MouseEvent): void {
+    event.stopPropagation();
+    event.preventDefault();
+    if (!notificationId || !this.currentUser?.id) return;
+    this.dismissedNotificationIds.add(notificationId);
+    this.persistDismissedNotificationIds();
+    this.dashboardNotifications = this.dashboardNotifications.filter((item) => item.id !== notificationId);
+  }
+
   openDashboardFlaggedResources(): void {
     this.dashboardTab = 'flagged';
     this.authMessage = '';
+    this.refreshMySubmissionsFromServer();
   }
 
   openDashboardAccountSettings(): void {
@@ -548,6 +1530,291 @@ export class AppComponent implements OnInit, OnDestroy {
     this.authMessage = '';
     this.updateRequestError = '';
     this.updateRequestSuccess = '';
+    this.refreshMySubmissionsFromServer();
+  }
+
+  openDashboardMessages(): void {
+    this.dashboardTab = 'messages';
+    this.authMessage = '';
+    this.userMessageError = '';
+    this.userMessageSuccess = '';
+    this.userStaffThreadExpanded = false;
+    this.loadUserAdminMessages();
+  }
+
+  expandUserStaffThread(): void {
+    if (this.isLoadingUserMessages) return;
+    this.userStaffThreadExpanded = true;
+    this.userMessageError = '';
+    this.userMessageSuccess = '';
+    this.markStaffThreadReadThroughLatest();
+  }
+
+  collapseUserStaffThread(): void {
+    this.userStaffThreadExpanded = false;
+    this.userMessageError = '';
+    this.userMessageSuccess = '';
+  }
+
+  get userStaffCollapsedTitle(): string {
+    if (this.userThreadArchivedByStaff) {
+      return 'Conversation closed by staff';
+    }
+    return 'Staff messages';
+  }
+
+  /** Messages nav badge: staff messages newer than the last time the member opened the thread. */
+  get userUnreadStaffMessageCount(): number {
+    if (!this.currentUser || this.currentUser.role !== 'user') return 0;
+    const lastReadMs = this.staffThreadLastReadAt
+      ? new Date(this.staffThreadLastReadAt).getTime()
+      : 0;
+    return this.userAdminMessages.filter((m) => {
+      if (m.sender_role !== 'admin') return false;
+      const t = new Date(m.created_at).getTime();
+      return !Number.isNaN(t) && t > lastReadMs;
+    }).length;
+  }
+
+  get userStaffCollapsedDetail(): string {
+    if (this.userThreadArchivedByStaff) {
+      return 'Tap to view your messages or start a new conversation.';
+    }
+    if (this.userAdminMessages.length === 0) {
+      return 'Tap to write to the team.';
+    }
+    const last = this.userAdminMessages[this.userAdminMessages.length - 1];
+    const text = (last.body || '').trim().replace(/\s+/g, ' ');
+    const snippet = text.length > 100 ? `${text.slice(0, 97)}…` : text;
+    const who = this.isUserMessageFromMe(last) ? 'You' : (last.sender_name?.trim() || 'Staff');
+    const when = this.formatChatDate(last.created_at);
+    return `${who}: ${snippet} · ${when}`;
+  }
+
+  submitUserAdminMessage(): void {
+    this.userMessageError = '';
+    this.userMessageSuccess = '';
+    const body = this.userMessageBody.trim();
+    if (!body) {
+      this.userMessageError = 'Please enter a message.';
+      return;
+    }
+    if (!this.currentUser || !this.authToken || this.currentUser.role !== 'user') {
+      this.userMessageError = 'You must be signed in as a member to send a message.';
+      return;
+    }
+    this.isSendingUserMessage = true;
+    this.http
+      .post<{ message?: string }>(`${this.apiBaseUrl}/messages`, { body }, { headers: this.getAuthHeaders() })
+      .subscribe({
+        next: (res) => {
+          this.isSendingUserMessage = false;
+          this.userMessageBody = '';
+          this.userMessageSuccess = res.message || 'Message sent.';
+          this.loadUserAdminMessages();
+        },
+        error: (err) => {
+          this.isSendingUserMessage = false;
+          this.userMessageError = err?.error?.error || 'Could not send your message right now.';
+        },
+      });
+  }
+
+  get adminMessageThreads(): AdminMessageThreadSummary[] {
+    const map = new Map<string, AdminMessageThreadSummary>();
+    for (const m of this.adminInboxMessages) {
+      const id = m.thread_user_id;
+      const label = this.getThreadMemberLabelFromRow(m);
+      const cur = map.get(id);
+      const t = new Date(m.created_at).getTime();
+      if (!cur || t > new Date(cur.lastMessageAt).getTime()) {
+        const preview = m.body.length > 100 ? `${m.body.slice(0, 97)}…` : m.body;
+        map.set(id, { threadUserId: id, label, lastMessageAt: m.created_at, preview });
+      }
+    }
+    return [...map.values()].sort(
+      (a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime()
+    );
+  }
+
+  get adminSelectedThreadMessages(): AdminInboxMessageRow[] {
+    if (!this.adminSelectedThreadUserId) return [];
+    return this.adminInboxMessages.filter((m) => m.thread_user_id === this.adminSelectedThreadUserId);
+  }
+
+  getThreadMemberLabelFromRow(m: AdminInboxMessageRow): string {
+    const name = `${m.thread_user_first_name || ''} ${m.thread_user_last_name || ''}`.trim();
+    return name || m.thread_user_email || 'Member';
+  }
+
+  getAdminMessageBubbleLabel(row: AdminInboxMessageRow): string {
+    if (row.sender_role === 'admin') {
+      return row.sender_name?.trim() || 'Staff';
+    }
+    return row.sender_name?.trim() || row.thread_user_email || 'Member';
+  }
+
+  isUserMessageFromMe(msg: UserAdminMessage): boolean {
+    return !!this.currentUser?.id && msg.sender_user_id === this.currentUser.id;
+  }
+
+  get showUserStaffMessageCompose(): boolean {
+    return !this.userThreadArchivedByStaff || this.userChoseContinueStaffChat;
+  }
+
+  beginNewStaffMessage(): void {
+    this.userChoseContinueStaffChat = true;
+    this.userMessageError = '';
+    this.userMessageSuccess = '';
+  }
+
+  selectAdminMessageThread(threadUserId: string): void {
+    this.adminSelectedThreadUserId = threadUserId;
+    this.adminReplyError = '';
+    this.adminReplySuccess = '';
+    this.adminArchiveThreadError = '';
+  }
+
+  setAdminMessagesScope(scope: 'active' | 'archived'): void {
+    if (this.adminMessagesScope === scope) return;
+    this.adminMessagesScope = scope;
+    this.adminSelectedThreadUserId = null;
+    this.adminArchiveThreadError = '';
+    this.adminMessagesLoadError = '';
+    this.loadAdminInboxMessages();
+  }
+
+  archiveAdminMessageThread(): void {
+    this.adminArchiveThreadError = '';
+    const threadUserId = this.adminSelectedThreadUserId;
+    if (!threadUserId) {
+      this.adminArchiveThreadError = 'Select a conversation first.';
+      return;
+    }
+    if (!this.currentUser || this.currentUser.role !== 'admin' || !this.authToken) {
+      this.adminArchiveThreadError = 'Admin session required.';
+      return;
+    }
+    this.isArchivingAdminThread = true;
+    this.http
+      .post<{ message?: string }>(
+        `${this.apiBaseUrl}/admin/messages/archive`,
+        { threadUserId },
+        { headers: this.getAuthHeaders() }
+      )
+      .subscribe({
+        next: () => {
+          this.isArchivingAdminThread = false;
+          this.adminSelectedThreadUserId = null;
+          this.refreshAdminActiveInboxCount();
+          this.loadAdminInboxMessages();
+        },
+        error: (err) => {
+          this.isArchivingAdminThread = false;
+          this.adminArchiveThreadError = err?.error?.error || 'Could not archive this conversation.';
+        },
+      });
+  }
+
+  unarchiveAdminMessageThread(): void {
+    this.adminArchiveThreadError = '';
+    const threadUserId = this.adminSelectedThreadUserId;
+    if (!threadUserId) {
+      this.adminArchiveThreadError = 'Select a conversation first.';
+      return;
+    }
+    if (!this.currentUser || this.currentUser.role !== 'admin' || !this.authToken) {
+      this.adminArchiveThreadError = 'Admin session required.';
+      return;
+    }
+    this.isArchivingAdminThread = true;
+    this.http
+      .post<{ message?: string }>(
+        `${this.apiBaseUrl}/admin/messages/unarchive`,
+        { threadUserId },
+        { headers: this.getAuthHeaders() }
+      )
+      .subscribe({
+        next: () => {
+          this.isArchivingAdminThread = false;
+          this.adminSelectedThreadUserId = null;
+          this.refreshAdminActiveInboxCount();
+          this.loadAdminInboxMessages();
+        },
+        error: (err) => {
+          this.isArchivingAdminThread = false;
+          this.adminArchiveThreadError = err?.error?.error || 'Could not restore this conversation.';
+        },
+      });
+  }
+
+  submitAdminThreadReply(): void {
+    this.adminReplyError = '';
+    this.adminReplySuccess = '';
+    const text = this.adminReplyBody.trim();
+    if (!this.adminSelectedThreadUserId) {
+      this.adminReplyError = 'Select a conversation from the list.';
+      return;
+    }
+    if (!text) {
+      this.adminReplyError = 'Enter a reply.';
+      return;
+    }
+    if (!this.currentUser || this.currentUser.role !== 'admin' || !this.authToken) {
+      this.adminReplyError = 'Admin session required.';
+      return;
+    }
+    this.isSendingAdminReply = true;
+    this.http
+      .post<{ message?: string }>(
+        `${this.apiBaseUrl}/admin/messages`,
+        { threadUserId: this.adminSelectedThreadUserId, body: text },
+        { headers: this.getAuthHeaders() }
+      )
+      .subscribe({
+        next: (res) => {
+          this.isSendingAdminReply = false;
+          this.adminReplyBody = '';
+          this.adminReplySuccess = res.message || 'Reply sent.';
+          this.loadAdminInboxMessages();
+        },
+        error: (err) => {
+          this.isSendingAdminReply = false;
+          this.adminReplyError = err?.error?.error || 'Could not send reply.';
+        },
+      });
+  }
+
+  private pickLatestThreadUserId(rows: AdminInboxMessageRow[]): string | null {
+    let latest: { id: string; t: number } | null = null;
+    for (const m of rows) {
+      const t = new Date(m.created_at).getTime();
+      if (!latest || t > latest.t) {
+        latest = { id: m.thread_user_id, t };
+      }
+    }
+    return latest?.id ?? null;
+  }
+
+  getAdminSubmissionHandledLine(sub: AdminSubmissionRow): string | null {
+    if (sub.status === 'pending' || !sub.reviewed_at) {
+      return null;
+    }
+    const who = this.formatReviewerDisplayName(sub.reviewer_name, sub.reviewer_email);
+    const when = this.formatChatDate(sub.reviewed_at);
+    const verb = sub.status === 'approved' ? 'Handled' : 'Declined';
+    return `${verb} by ${who} on ${when}.`;
+  }
+
+  getDeleteModalSub(): string {
+    return 'Please enter your password to confirm. This action cannot be undone.';
+  }
+
+  getDeleteModalWarning(): string {
+    if (this.currentUser?.role === 'admin') {
+      return 'Deleting your administrator account will remove your login. Ensure another admin exists if the site should stay manageable.';
+    }
+    return 'Deleting your account will remove saved resources, flagged items, and account data.';
   }
 
   openDashboardMain(): void {
@@ -589,8 +1856,27 @@ export class AppComponent implements OnInit, OnDestroy {
     return colorMap[category] || '#E1F5EE';
   }
 
-  get unreadNotificationCount(): number {
-    return this.dashboardNotifications.filter((item) => item.isUnread).length;
+  /** Count of notifications currently shown (matches list length; respects dismissed items). */
+  get notificationCount(): number {
+    return this.dashboardNotifications.length;
+  }
+
+  get userZipUpdateRequests(): UpdateRequestItem[] {
+    return this.updateRequests.filter((item) => {
+      if (!this.isZipOnlyUpdateRequest(item)) return false;
+      if (this.userZipRequestArchivedViewIds.has(item.id)) return false;
+      return true;
+    });
+  }
+
+  /** Sidebar badge: pending ZIP requests only (reviewed/declined/archived-from-view excluded). */
+  get userPendingZipUpdateRequestCount(): number {
+    return this.userZipUpdateRequests.filter((item) => item.status === 'pending').length;
+  }
+
+  /** Sidebar badge: flags still awaiting admin review (corrected/declined excluded). */
+  get userPendingFlaggedResourceCount(): number {
+    return this.flaggedResources.filter((item) => !item.status || item.status === 'pending').length;
   }
 
   saveAccountSettings(): void {
@@ -673,6 +1959,9 @@ export class AppComponent implements OnInit, OnDestroy {
             localStorage.removeItem(`crf_recent_searches_${this.currentUser.id}`);
             localStorage.removeItem(`crf_flagged_resources_${this.currentUser.id}`);
             localStorage.removeItem(`crf_update_requests_${this.currentUser.id}`);
+            localStorage.removeItem(`crf_zip_req_archived_${this.currentUser.id}`);
+            localStorage.removeItem(`crf_staff_thread_last_read_${this.currentUser.id}`);
+            localStorage.removeItem(`crf_dismissed_notifications_${this.currentUser.id}`);
           }
           this.clearAuthSession();
           this.closeDeleteModal();
@@ -690,7 +1979,36 @@ export class AppComponent implements OnInit, OnDestroy {
     this.expandedFlaggedResourceId = this.expandedFlaggedResourceId === itemId ? null : itemId;
   }
 
-  withdrawUpdateRequest(requestId: string): void {
+  cancelUpdateRequest(requestId: string): void {
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      requestId
+    );
+
+    if (this.currentUser && this.authToken && isUuid) {
+      this.updateRequestError = '';
+      this.updateRequestSuccess = '';
+      this.http
+        .delete<{ message?: string }>(`${this.apiBaseUrl}/submissions/${requestId}`, {
+          headers: this.getAuthHeaders(),
+        })
+        .subscribe({
+          next: (response) => {
+            this.updateRequests = this.updateRequests.filter((item) => item.id !== requestId);
+            this.persistUpdateRequests();
+            this.updateRequestSuccess = response.message || 'Request cancelled.';
+          },
+          error: (err) => {
+            if (err?.status === 404) {
+              this.updateRequests = this.updateRequests.filter((item) => item.id !== requestId);
+              this.persistUpdateRequests();
+              return;
+            }
+            this.updateRequestError = err?.error?.error || 'Could not cancel request.';
+          },
+        });
+      return;
+    }
+
     this.updateRequests = this.updateRequests.filter((item) => item.id !== requestId);
     this.persistUpdateRequests();
   }
@@ -702,44 +2020,76 @@ export class AppComponent implements OnInit, OnDestroy {
     const zip = this.updateRequestZip.trim();
 
     if (!/^\d{5}$/.test(zip)) {
-      this.updateRequestError = 'Enter a valid 5-digit ZIP code.';
+      this.updateRequestError = 'Enter a valid 5-digit US ZIP code.';
       return;
     }
-    if (this.hasExistingZipRequest(zip)) {
+    if (this.zipRequestOccupiesSlot(zip)) {
       this.updateRequestError = `A request for ZIP ${zip} was already submitted.`;
       return;
     }
 
     const submittedAt = new Date().toISOString();
-    const item: UpdateRequestItem = {
-      id: `zipreq-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      resource: {
-        id: `zip-resource-${Date.now()}`,
-        name: `For ZIP ${zip}`,
-        address: `Requested service area ${zip}`,
-        city: null,
-        state: 'NJ',
-        zip_code: zip,
-        phone_number: null,
-        category_name: null,
-      },
-      note: `Requested all resource types for ZIP ${zip}.`,
-      submittedAt,
-      submittedDateLabel: this.getFlaggedDateLabel(submittedAt),
-      status: 'pending',
-    };
+    const note = `Requested all resource types for ZIP ${zip}.`;
+    const requestOptions = this.currentUser && this.authToken ? { headers: this.getAuthHeaders() } : {};
+    this.http
+      .post<{ submission?: { id?: string; status?: 'pending' | 'approved' | 'rejected'; created_at?: string } }>(
+        `${this.apiBaseUrl}/submissions`,
+        {
+          zipOrCity: zip,
+          categoryId: 6,
+          resourceName: `For ZIP ${zip}`,
+          notes: note,
+        },
+        requestOptions
+      )
+      .subscribe({
+        next: (response) => {
+          const item: UpdateRequestItem = {
+            id: response.submission?.id || `zipreq-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            resource: {
+              id: `zip-resource-${Date.now()}`,
+              name: `For ZIP ${zip}`,
+              address: `Requested service area ${zip}`,
+              city: null,
+              state: 'NJ',
+              zip_code: zip,
+              phone_number: null,
+              category_name: null,
+            },
+            note,
+            submittedAt,
+            submittedDateLabel: this.getFlaggedDateLabel(submittedAt),
+            status: 'pending',
+          };
 
-    this.updateRequests = [item, ...this.updateRequests];
-    this.persistUpdateRequests();
-    this.updateRequestSuccess = 'Request submitted to include resources for this ZIP.';
-    this.updateRequestZip = '';
+          this.updateRequests = [item, ...this.updateRequests];
+          this.persistUpdateRequests();
+          this.updateRequestSuccess = 'Request submitted to include resources for this ZIP.';
+          this.updateRequestZip = '';
+        },
+        error: (err) => {
+          this.updateRequestError =
+            err?.error?.error || 'Could not submit ZIP request right now. Please try again.';
+        },
+      });
   }
 
-  private hasExistingZipRequest(zip: string): boolean {
+  /** Blocks submitting another ZIP request for the same ZIP while one is active on the dashboard. */
+  private zipRequestOccupiesSlot(zip: string): boolean {
+    const z = zip.trim();
     return this.updateRequests.some((item) => {
+      if (!this.isZipOnlyUpdateRequest(item)) return false;
       const itemZip = (item.resource?.zip_code || '').trim();
-      return itemZip === zip;
+      if (itemZip !== z) return false;
+      if (this.userZipRequestArchivedViewIds.has(item.id)) return false;
+      return true;
     });
+  }
+
+  archiveUserZipRequestFromDashboard(item: UpdateRequestItem): void {
+    if (item.status !== 'reviewed' && item.status !== 'declined') return;
+    this.userZipRequestArchivedViewIds.add(item.id);
+    this.persistZipRequestArchivedViewIds();
   }
 
   getUpdateRequestStatusLabel(status: UpdateRequestStatus): string {
@@ -842,7 +2192,16 @@ export class AppComponent implements OnInit, OnDestroy {
           this.loadUpdateRequests();
           this.refreshRecentSearches();
           this.loginSuccess = `Signed in successfully${response.user?.name ? `, ${response.user.name}` : ''}.`;
-          this.viewMode = returnedRole === 'user' ? 'userDashboard' : 'landing';
+          if (returnedRole === 'admin') {
+            this.openAdminDashboard();
+          } else {
+            this.viewMode = 'userDashboard';
+          }
+          this.loadDashboardNotifications();
+          if (returnedRole === 'user') {
+            this.loadUserAdminMessages();
+            this.refreshMySubmissionsFromServer();
+          }
         },
         error: (err) => {
           this.isLoggingIn = false;
@@ -871,6 +2230,7 @@ export class AppComponent implements OnInit, OnDestroy {
           this.savedResources = serverSaved;
           this.persistSavedResources();
           this.isSyncingSaved = false;
+          this.loadDashboardNotifications();
           if (showStatus) {
             this.authMessage = 'Loaded saved resources from your account.';
           }
@@ -964,13 +2324,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.submissionError = '';
     this.submissionSuccess = '';
     this.suggestionForm.zipOrCity = this.lastSearchTerm || this.searchInput.trim();
-    if (this.selectedCategoryId) {
-      this.suggestionForm.categoryId = this.selectedCategoryId;
-    }
-  }
-
-  setSuggestionCategory(categoryId: number): void {
-    this.suggestionForm.categoryId = categoryId;
+    this.suggestionForm.categoryId = null;
   }
 
   submitSuggestion(): void {
@@ -981,8 +2335,11 @@ export class AppComponent implements OnInit, OnDestroy {
       this.submissionError = 'Please enter zip code/city for the suggestion.';
       return;
     }
-    if (!this.suggestionForm.categoryId) {
-      this.submissionError = 'Please choose a resource type.';
+
+    const suggestLoc = this.suggestionForm.zipOrCity.trim();
+    if (/^\d+$/.test(suggestLoc) && !/^(\d{5})(-\d{4})?$/.test(suggestLoc)) {
+      this.submissionError =
+        'Use a valid 5-digit U.S. ZIP code (you can use ZIP+4 as 12345-6789) or enter a city name instead.';
       return;
     }
 
@@ -990,7 +2347,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.http
       .post<{ message: string }>(`${this.apiBaseUrl}/submissions`, {
         zipOrCity: this.suggestionForm.zipOrCity.trim(),
-        categoryId: this.suggestionForm.categoryId,
+        categoryId: null,
         notes: this.suggestionForm.notes.trim() || null,
       })
       .subscribe({
@@ -999,13 +2356,19 @@ export class AppComponent implements OnInit, OnDestroy {
           this.submissionSuccess = 'Suggestion sent. Admin will review it.';
           this.suggestionForm = {
             zipOrCity: this.lastSearchTerm || this.suggestionForm.zipOrCity,
-            categoryId: this.suggestionForm.categoryId,
+            categoryId: null,
             notes: '',
           };
         },
-        error: () => {
+        error: (err) => {
           this.isSubmittingSuggestion = false;
-          this.submissionError = 'Could not submit suggestion right now. Please try again.';
+          const details = err?.error?.details;
+          const firstDetail =
+            Array.isArray(details) && details.length > 0 ? String(details[0].msg || details[0] || '') : '';
+          this.submissionError =
+            err?.error?.error ||
+            firstDetail ||
+            'Could not submit suggestion right now. Please try again.';
         },
       });
   }
@@ -1043,7 +2406,7 @@ export class AppComponent implements OnInit, OnDestroy {
     }
 
     if (resource.is_verified) {
-      tags.push({ label: 'Verified', className: 'tag-verified' });
+      tags.push({ label: 'Resource Verified', className: 'tag-verified' });
     }
 
     if (resource.website) {
@@ -1124,6 +2487,7 @@ export class AppComponent implements OnInit, OnDestroy {
       this.http
         .delete(`${this.apiBaseUrl}/saved/${resource.id}`, { headers: this.getAuthHeaders() })
         .subscribe({
+          next: () => this.loadDashboardNotifications(),
           error: () => {
             this.authMessage = 'Could not unsave from account. Local save was updated only.';
           },
@@ -1138,6 +2502,7 @@ export class AppComponent implements OnInit, OnDestroy {
         { headers: this.getAuthHeaders() }
       )
       .subscribe({
+        next: () => this.loadDashboardNotifications(),
         error: () => {
           this.authMessage = 'Could not save to account. Local save still worked.';
         },
@@ -1181,14 +2546,18 @@ export class AppComponent implements OnInit, OnDestroy {
 
     const zipOrCity = resource.zip_code || resource.city || this.lastSearchTerm || 'Unknown area';
     this.http
-      .post<{ message: string }>(`${this.apiBaseUrl}/submissions`, {
+      .post<{ message: string; submission?: { id: string; status: 'pending' | 'approved' | 'rejected'; created_at: string } }>(
+        `${this.apiBaseUrl}/submissions`,
+        {
         zipOrCity,
         categoryId,
         resourceName: resource.name,
         notes: `FLAGGED RESOURCE (${resource.id}) by ${this.currentUser.email}: ${reason}`,
-      })
+        },
+        { headers: this.getAuthHeaders() }
+      )
       .subscribe({
-        next: () => {
+        next: (response) => {
           const flaggedAt = new Date().toISOString();
           const flaggedItem: FlaggedResourceItem = {
             id: `flag-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -1196,20 +2565,12 @@ export class AppComponent implements OnInit, OnDestroy {
             reason,
             flaggedAt,
             flaggedDateLabel: this.getFlaggedDateLabel(flaggedAt),
+            submissionId: response.submission?.id,
+            status: 'pending',
+            statusLabel: 'Pending review',
           };
           this.flaggedResources = [flaggedItem, ...this.flaggedResources];
           this.persistFlaggedResources();
-
-          const requestItem: UpdateRequestItem = {
-            id: flaggedItem.id,
-            resource: { ...resource },
-            note: reason,
-            submittedAt: flaggedAt,
-            submittedDateLabel: this.getFlaggedDateLabel(flaggedAt),
-            status: 'pending',
-          };
-          this.updateRequests = [requestItem, ...this.updateRequests];
-          this.persistUpdateRequests();
 
           this.flagSuccess = 'Flag sent for admin review. Thank you.';
           this.flagReason = '';
@@ -1222,6 +2583,49 @@ export class AppComponent implements OnInit, OnDestroy {
           this.flagError = 'Could not submit flag right now. Please try again.';
         },
       });
+  }
+
+  verifyResource(resource: Resource): void {
+    this.verifyRequestError = '';
+    this.verifyRequestSuccess = '';
+    this.verifyRequestResourceId = resource.id;
+
+    if (!this.currentUser) {
+      this.verifyRequestError = 'Please log in as a user to verify resources.';
+      return;
+    }
+
+    if (resource.is_verified) {
+      this.verifyRequestSuccess = 'This resource is already verified.';
+      return;
+    }
+    this.http
+      .post<{ message?: string; isVerified?: boolean }>(
+        `${this.apiBaseUrl}/resources/${resource.id}/verify`,
+        {},
+        { headers: this.getAuthHeaders() }
+      )
+      .subscribe({
+        next: (response) => {
+          this.markResourceAsVerified(resource.id);
+          this.verifyRequestSuccess = response.message || 'Resource verified.';
+        },
+        error: (err) => {
+          this.verifyRequestError = err?.error?.error || 'Could not verify resource right now.';
+        },
+      });
+  }
+
+  private markResourceAsVerified(resourceId: string): void {
+    const applyVerified = (item: Resource): Resource =>
+      item.id === resourceId ? { ...item, is_verified: true } : item;
+
+    this.allResults = this.allResults.map(applyVerified);
+    this.filteredResults = this.filteredResults.map(applyVerified);
+    this.savedResources = this.savedResources.map(applyVerified);
+    this.adminResources = this.adminResources.map(applyVerified);
+    this.adminSelectedResources = this.adminSelectedResources.map(applyVerified);
+    this.persistSavedResources();
   }
 
   private persistSavedResources(): void {
@@ -1277,13 +2681,203 @@ export class AppComponent implements OnInit, OnDestroy {
     try {
       const parsed = JSON.parse(raw);
       this.flaggedResources = Array.isArray(parsed) ? parsed : [];
-      this.flaggedResources = this.flaggedResources.map((item) => ({
-        ...item,
-        flaggedDateLabel: this.getFlaggedDateLabel(item.flaggedAt || new Date().toISOString()),
-      }));
+      this.flaggedResources = this.flaggedResources.map((item) => {
+        const st = item.status;
+        const status: FlaggedResourceItem['status'] =
+          st === 'corrected' ? 'corrected' : st === 'declined' ? 'declined' : 'pending';
+        let statusLabel = item.statusLabel;
+        if (!statusLabel) {
+          if (status === 'corrected') statusLabel = 'Corrected';
+          else if (status === 'declined') statusLabel = 'Declined';
+          else statusLabel = 'Pending review';
+        }
+        return {
+          ...item,
+          flaggedDateLabel: this.getFlaggedDateLabel(item.flaggedAt || new Date().toISOString()),
+          status,
+          statusLabel,
+        };
+      });
     } catch {
       this.flaggedResources = [];
     }
+  }
+
+  private formatReviewerDisplayName(name: string | null | undefined, email: string | null | undefined): string {
+    const n = (name || '').trim();
+    if (n) return n;
+    const e = (email || '').trim();
+    if (e) return e.includes('@') ? e.split('@')[0] : e;
+    return 'Administrator';
+  }
+
+  private buildUserSubmissionHandledSummary(match: UserSubmissionStatusRow): string | null {
+    if (match.status === 'pending') return null;
+    const who = this.formatReviewerDisplayName(match.reviewer_name, match.reviewer_email);
+    const when = this.formatChatDate(match.reviewed_at || match.updated_at);
+    const verb = match.status === 'approved' ? 'Handled' : 'Declined';
+    return `${verb} by ${who} on ${when}`;
+  }
+
+  private refreshMySubmissionsFromServer(): void {
+    if (!this.currentUser || !this.authToken || this.currentUser.role !== 'user') return;
+
+    this.http
+      .get<UserSubmissionStatusRow[]>(`${this.apiBaseUrl}/submissions/mine`, { headers: this.getAuthHeaders() })
+      .subscribe({
+        next: (rows) => {
+          const byId = new Map(rows.map((row) => [row.id, row]));
+          const correctedResourceIds = new Set<string>();
+          let flaggedChanged = false;
+          this.flaggedResources = this.flaggedResources.map((item) => {
+            if (!item.submissionId) return item;
+            const match = byId.get(item.submissionId);
+            if (!match || match.submission_kind !== 'flag') return item;
+            const handled = this.buildUserSubmissionHandledSummary(match);
+            if (match.status === 'approved') {
+              if (item.resource?.id) correctedResourceIds.add(item.resource.id);
+              const nextLabel = handled ? `Corrected · ${handled}` : `Corrected ${this.getFlaggedDateLabel(match.updated_at)}`;
+              const next: FlaggedResourceItem = {
+                ...item,
+                status: 'corrected',
+                statusLabel: nextLabel,
+                handledSummary: handled || undefined,
+                adminReviewNote: match.review_notes || undefined,
+              };
+              if (
+                item.status !== next.status ||
+                item.statusLabel !== next.statusLabel ||
+                item.handledSummary !== next.handledSummary ||
+                item.adminReviewNote !== next.adminReviewNote
+              ) {
+                flaggedChanged = true;
+              }
+              return next;
+            }
+            if (match.status === 'rejected') {
+              const next: FlaggedResourceItem = {
+                ...item,
+                status: 'declined',
+                statusLabel: 'Declined',
+                handledSummary: handled || undefined,
+                adminReviewNote: match.review_notes || undefined,
+              };
+              if (item.status !== next.status || item.handledSummary !== next.handledSummary) {
+                flaggedChanged = true;
+              }
+              return next;
+            }
+            const next: FlaggedResourceItem = {
+              ...item,
+              status: 'pending',
+              statusLabel: 'Pending review',
+              handledSummary: undefined,
+              adminReviewNote: undefined,
+            };
+            if (item.status !== 'pending' || item.handledSummary || item.adminReviewNote) {
+              flaggedChanged = true;
+            }
+            return next;
+          });
+
+          let zipChanged = false;
+          this.updateRequests = this.updateRequests.filter((item) => {
+            const match = byId.get(item.id);
+            if (!this.isZipOnlyUpdateRequest(item)) return true;
+            if (match?.submission_kind === 'zip_request' && match.status === 'cancelled') {
+              zipChanged = true;
+              return false;
+            }
+            return true;
+          });
+
+          this.updateRequests = this.updateRequests.map((item) => {
+            const match = byId.get(item.id);
+            if (!match || match.submission_kind !== 'zip_request') return item;
+            const handled = this.buildUserSubmissionHandledSummary(match);
+            if (match.status === 'pending') {
+              const next: UpdateRequestItem = {
+                ...item,
+                status: 'pending',
+                handledSummary: undefined,
+                adminReviewNote: undefined,
+              };
+              if (
+                item.status !== 'pending' ||
+                item.handledSummary !== undefined ||
+                (item.adminReviewNote !== undefined && item.adminReviewNote !== null)
+              ) {
+                zipChanged = true;
+              }
+              return next;
+            }
+            if (match.status === 'approved') {
+              const next: UpdateRequestItem = {
+                ...item,
+                status: 'reviewed',
+                handledSummary: handled || undefined,
+                adminReviewNote: match.review_notes || undefined,
+              };
+              if (item.status !== 'reviewed' || item.handledSummary !== next.handledSummary) zipChanged = true;
+              return next;
+            }
+            if (match.status === 'rejected') {
+              const next: UpdateRequestItem = {
+                ...item,
+                status: 'declined',
+                handledSummary: handled || undefined,
+                adminReviewNote: match.review_notes || undefined,
+              };
+              if (item.status !== 'declined' || item.handledSummary !== next.handledSummary) zipChanged = true;
+              return next;
+            }
+            return item;
+          });
+
+          if (flaggedChanged) {
+            this.persistFlaggedResources();
+          }
+          if (zipChanged) {
+            this.persistUpdateRequests();
+          }
+          if (correctedResourceIds.size > 0) {
+            this.refreshFlaggedResourceDetails(Array.from(correctedResourceIds));
+          }
+        },
+      });
+  }
+
+  private refreshFlaggedResourceDetails(resourceIds: string[]): void {
+    resourceIds.forEach((resourceId) => {
+      this.http
+        .get<Resource>(`${this.apiBaseUrl}/resources/${resourceId}`)
+        .subscribe({
+          next: (latest) => {
+            let updated = false;
+            this.flaggedResources = this.flaggedResources.map((item) => {
+              if (!item.resource || item.resource.id !== resourceId) return item;
+              updated = true;
+              return {
+                ...item,
+                resource: {
+                  ...item.resource,
+                  ...latest,
+                },
+              };
+            });
+            if (updated) {
+              this.persistFlaggedResources();
+            }
+          },
+        });
+    });
+  }
+
+  private isZipOnlyUpdateRequest(item: UpdateRequestItem): boolean {
+    const zip = (item.resource?.zip_code || '').trim();
+    if (!/^\d{5}$/.test(zip)) return false;
+    const label = (item.resource?.name || '').trim();
+    return label.startsWith('For ZIP ');
   }
 
   private loadUpdateRequests(): void {
@@ -1388,6 +2982,9 @@ export class AppComponent implements OnInit, OnDestroy {
     if (!token || !rawUser) {
       this.currentUser = null;
       this.authToken = '';
+      this.dismissedNotificationIds.clear();
+      this.userZipRequestArchivedViewIds.clear();
+      this.staffThreadLastReadAt = null;
       return;
     }
 
@@ -1395,9 +2992,19 @@ export class AppComponent implements OnInit, OnDestroy {
       const parsed = JSON.parse(rawUser) as AuthUser;
       this.currentUser = parsed;
       this.authToken = token;
+      this.loadDismissedNotificationIdsFromStorage();
+      this.loadZipRequestArchivedViewIds();
+      if (parsed.role !== 'admin') {
+        this.loadStaffThreadLastReadFromStorage();
+      } else {
+        this.staffThreadLastReadAt = null;
+      }
     } catch {
       this.currentUser = null;
       this.authToken = '';
+      this.dismissedNotificationIds.clear();
+      this.userZipRequestArchivedViewIds.clear();
+      this.staffThreadLastReadAt = null;
       localStorage.removeItem('crf_auth_token');
       localStorage.removeItem('crf_auth_user');
     }
@@ -1420,6 +3027,21 @@ export class AppComponent implements OnInit, OnDestroy {
     localStorage.removeItem('crf_auth_user');
     this.currentUser = null;
     this.authToken = '';
+    this.dismissedNotificationIds.clear();
+    this.userZipRequestArchivedViewIds.clear();
+    this.staffThreadLastReadAt = null;
+    this.userAdminMessages = [];
+    this.userThreadArchivedByStaff = false;
+    this.userChoseContinueStaffChat = false;
+    this.userStaffThreadExpanded = false;
+    this.adminInboxMessages = [];
+    this.adminMessagesActiveThreadCount = 0;
+    this.adminMessagesScope = 'active';
+    this.adminMessagesLoadError = '';
+    this.adminSelectedThreadUserId = null;
+    this.adminReplyBody = '';
+    this.adminReplyError = '';
+    this.adminReplySuccess = '';
     this.userLocation = null;
     this.locationStatusMessage = '';
     this.loadSavedResources();
@@ -1446,27 +3068,36 @@ export class AppComponent implements OnInit, OnDestroy {
       return;
     }
 
+    this.loadDismissedNotificationIdsFromStorage();
+
     this.http
       .get<ApiNotificationRow[]>(`${this.apiBaseUrl}/notifications`, { headers: this.getAuthHeaders() })
       .subscribe({
         next: (rows) => {
-          this.dashboardNotifications = rows.map((row, index) => {
+          this.dashboardNotifications = rows.reduce<NotificationItem[]>((acc, row, index) => {
+            const id = this.stableNotificationIdFromRow(row, index);
+            if (this.dismissedNotificationIds.has(id)) {
+              return acc;
+            }
             const category = this.normalizeNotificationCategory(row.category_name);
             const actionText = this.getNotificationActionLabel(row.action);
             const locationBits = [row.address, row.city, row.state, row.zip_code].filter(Boolean).join(', ');
-            const details = locationBits
+            const baseDetails = locationBits
               ? `${actionText} in database for ${row.resource_name}. Location: ${locationBits}.`
               : `${actionText} in database for ${row.resource_name}.`;
+            const changeSummary = this.formatNotificationChangeSummary(row.action, row.changes);
+            const details = changeSummary ? `${baseDetails} ${changeSummary}` : baseDetails;
 
-            return {
-              id: row.notification_id || `${row.resource_id}-${row.created_at}-${index}`,
+            acc.push({
+              id,
               title: `${row.resource_name} was ${row.action}`,
               details,
               category,
               dateLabel: this.getFlaggedDateLabel(row.created_at),
-              isUnread: index < 3,
-            };
-          });
+              isUnread: false,
+            });
+            return acc;
+          }, []);
         },
         error: () => {
           this.dashboardNotifications = [];
@@ -1492,6 +3123,436 @@ export class AppComponent implements OnInit, OnDestroy {
     return 'Listing changed';
   }
 
+  private getDismissedNotificationsStorageKey(): string | null {
+    const userId = this.currentUser?.id;
+    return userId ? `crf_dismissed_notifications_${userId}` : null;
+  }
+
+  private loadDismissedNotificationIdsFromStorage(): void {
+    this.dismissedNotificationIds.clear();
+    const key = this.getDismissedNotificationsStorageKey();
+    if (!key) return;
+    const raw = localStorage.getItem(key);
+    if (!raw) return;
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (!Array.isArray(parsed)) return;
+      for (const item of parsed) {
+        if (typeof item === 'string' && item.length > 0) {
+          this.dismissedNotificationIds.add(item);
+        }
+      }
+    } catch {
+      /* ignore corrupt storage */
+    }
+  }
+
+  private persistDismissedNotificationIds(): void {
+    const key = this.getDismissedNotificationsStorageKey();
+    if (!key) return;
+    localStorage.setItem(key, JSON.stringify([...this.dismissedNotificationIds]));
+  }
+
+  private stableNotificationIdFromRow(row: ApiNotificationRow, index: number): string {
+    return row.notification_id || `${row.resource_id}-${row.created_at}-${index}`;
+  }
+
+  private formatNotificationChangeSummary(action: string, changes: Record<string, unknown> | null | undefined): string {
+    if (!changes || typeof changes !== 'object') {
+      return '';
+    }
+
+    if (action === 'verified') {
+      return 'Detail: this listing is now marked verified in the database.';
+    }
+
+    const source = changes['source'];
+    if (source === 'zip_import') {
+      const zip = typeof changes['zipCode'] === 'string' ? changes['zipCode'].trim() : '';
+      if (action === 'created') {
+        return zip
+          ? `Detail: added from a directory import for ZIP ${zip}.`
+          : 'Detail: added from a community directory import.';
+      }
+      return zip
+        ? `Detail: listing fields were refreshed from a directory import for ZIP ${zip}.`
+        : 'Detail: listing fields were refreshed from a community directory import.';
+    }
+
+    if (action === 'created' && changes['after'] && typeof changes['after'] === 'object') {
+      const snapshot = this.summarizeResourceRowForNotification(changes['after'] as Record<string, unknown>);
+      return snapshot ? `Detail: ${snapshot}` : '';
+    }
+
+    if (action === 'updated' && changes['before'] && changes['after']) {
+      const diff = this.formatResourceFieldDiffs(
+        changes['before'] as Record<string, unknown>,
+        changes['after'] as Record<string, unknown>
+      );
+      return diff ? `Detail: ${diff}` : 'Detail: one or more fields on this listing were updated.';
+    }
+
+    return '';
+  }
+
+  private summarizeResourceRowForNotification(row: Record<string, unknown>): string {
+    const keys = ['name', 'address', 'city', 'state', 'zip_code', 'phone_number', 'hours_of_operation', 'website'] as const;
+    const parts: string[] = [];
+    for (const key of keys) {
+      const raw = row[key];
+      if (raw === null || raw === undefined) continue;
+      const s = String(raw).trim();
+      if (!s) continue;
+      const label = this.resourceFieldLabel(key);
+      parts.push(`${label}: ${this.truncateNotificationText(s)}`);
+    }
+    return parts.join('; ');
+  }
+
+  private formatResourceFieldDiffs(before: Record<string, unknown>, after: Record<string, unknown>): string {
+    const tracked = [
+      'name',
+      'description',
+      'address',
+      'city',
+      'state',
+      'zip_code',
+      'phone_number',
+      'hours_of_operation',
+      'website',
+      'requirements',
+      'category_id',
+      'is_verified',
+    ] as const;
+    const parts: string[] = [];
+    for (const key of tracked) {
+      const b = before[key];
+      const a = after[key];
+      if (this.valuesEqualForAudit(b, a)) continue;
+      const label = this.resourceFieldLabel(key);
+      if (key === 'category_id') {
+        parts.push(
+          `${label}: ${this.formatCategoryIdForNotification(b)} → ${this.formatCategoryIdForNotification(a)}`
+        );
+        continue;
+      }
+      parts.push(
+        `${label}: ${this.formatNotificationFieldValue(b)} → ${this.formatNotificationFieldValue(a)}`
+      );
+    }
+    return parts.length ? `Updated fields — ${parts.join('; ')}` : '';
+  }
+
+  private resourceFieldLabel(key: string): string {
+    const map: Record<string, string> = {
+      name: 'Name',
+      description: 'Description',
+      address: 'Address',
+      city: 'City',
+      state: 'State',
+      zip_code: 'ZIP',
+      phone_number: 'Phone',
+      hours_of_operation: 'Hours',
+      website: 'Website',
+      requirements: 'Requirements / eligibility',
+      category_id: 'Category',
+      is_verified: 'Verified',
+    };
+    return map[key] || key;
+  }
+
+  private valuesEqualForAudit(a: unknown, b: unknown): boolean {
+    if (a === b) return true;
+    if (a == null && b == null) return true;
+    return JSON.stringify(a) === JSON.stringify(b);
+  }
+
+  private formatNotificationFieldValue(val: unknown): string {
+    if (val === null || val === undefined) return '—';
+    if (typeof val === 'boolean') return val ? 'Yes' : 'No';
+    const s = String(val).trim();
+    if (!s) return '—';
+    return this.truncateNotificationText(s);
+  }
+
+  private formatCategoryIdForNotification(val: unknown): string {
+    if (val === null || val === undefined) return '—';
+    const id = Number(val);
+    if (Number.isNaN(id)) return this.formatNotificationFieldValue(val);
+    const row = this.categories.find((c) => c.id === id);
+    return row ? row.label : `Category #${id}`;
+  }
+
+  private truncateNotificationText(s: string, max = 200): string {
+    if (s.length <= max) return s;
+    return `${s.slice(0, max - 1)}…`;
+  }
+
+  private loadAdminDashboardData(): void {
+    this.loadAdminResources();
+    this.loadAdminSubmissions();
+    this.loadAdminUsers();
+    this.refreshAdminActiveInboxCount();
+  }
+
+  private loadAdminResources(): void {
+    if (!this.currentUser || this.currentUser.role !== 'admin' || !this.authToken) {
+      return;
+    }
+
+    this.isAdminLoading = true;
+    this.http
+      .get<Resource[]>(`${this.apiBaseUrl}/admin/resources`, { headers: this.getAuthHeaders() })
+      .subscribe({
+        next: (rows) => {
+          this.adminResources = rows;
+          this.adminZipRows = this.buildAdminZipRows(rows);
+          if (this.adminSelectedZip) {
+            this.adminSelectedResources = this.filterAdminResourcesByZipCategory(
+              this.adminSelectedZip,
+              this.adminSelectedCategoryKey
+            );
+          }
+          this.isAdminLoading = false;
+        },
+        error: (err) => {
+          this.adminResources = [];
+          this.adminZipRows = [];
+          this.isAdminLoading = false;
+          this.adminDashboardError = err?.error?.error || 'Could not load admin resources right now.';
+        },
+      });
+  }
+
+  private loadAdminSubmissions(): void {
+    if (!this.currentUser || this.currentUser.role !== 'admin' || !this.authToken) {
+      return;
+    }
+
+    this.http
+      .get<AdminSubmissionRow[]>(`${this.apiBaseUrl}/admin/submissions`, { headers: this.getAuthHeaders() })
+      .subscribe({
+        next: (rows) => {
+          this.adminSubmissions = rows;
+        },
+        error: () => {
+          this.adminSubmissions = [];
+        },
+      });
+  }
+
+  private loadAdminUsers(): void {
+    if (!this.currentUser || this.currentUser.role !== 'admin' || !this.authToken) {
+      return;
+    }
+
+    this.http
+      .get<AdminUserAccount[]>(`${this.apiBaseUrl}/admin/users`, { headers: this.getAuthHeaders() })
+      .subscribe({
+        next: (rows) => {
+          this.adminUsers = rows;
+        },
+        error: (err) => {
+          this.adminUsers = [];
+          this.adminUserActionError = err?.error?.error || 'Could not load user accounts.';
+        },
+      });
+  }
+
+  private loadUserAdminMessages(): void {
+    if (!this.currentUser || !this.authToken || this.currentUser.role !== 'user') {
+      this.userAdminMessages = [];
+      this.userThreadArchivedByStaff = false;
+      this.userChoseContinueStaffChat = false;
+      return;
+    }
+
+    this.isLoadingUserMessages = true;
+    this.http
+      .get<UserMessagesApiResponse | UserAdminMessage[]>(`${this.apiBaseUrl}/messages`, {
+        headers: this.getAuthHeaders(),
+      })
+      .subscribe({
+        next: (data) => {
+          if (Array.isArray(data)) {
+            this.userAdminMessages = data;
+            this.userThreadArchivedByStaff = false;
+          } else {
+            this.userAdminMessages = data.messages ?? [];
+            this.userThreadArchivedByStaff = Boolean(data.threadArchivedByStaff);
+          }
+          if (!this.userThreadArchivedByStaff) {
+            this.userChoseContinueStaffChat = false;
+          }
+          this.isLoadingUserMessages = false;
+          if (this.userStaffThreadExpanded) {
+            this.markStaffThreadReadThroughLatest();
+          }
+        },
+        error: () => {
+          this.userAdminMessages = [];
+          this.userThreadArchivedByStaff = false;
+          this.userChoseContinueStaffChat = false;
+          this.isLoadingUserMessages = false;
+        },
+      });
+  }
+
+  private getStaffThreadLastReadKey(): string {
+    if (!this.currentUser || this.currentUser.role !== 'user') return '';
+    return `crf_staff_thread_last_read_${this.currentUser.id}`;
+  }
+
+  private loadStaffThreadLastReadFromStorage(): void {
+    this.staffThreadLastReadAt = null;
+    const key = this.getStaffThreadLastReadKey();
+    if (!key) return;
+    const raw = localStorage.getItem(key)?.trim();
+    if (raw) this.staffThreadLastReadAt = raw;
+  }
+
+  /** Call when the member opens the conversation or reloads it while open — clears unread for current messages. */
+  private markStaffThreadReadThroughLatest(): void {
+    if (!this.currentUser || this.currentUser.role !== 'user') return;
+    const key = this.getStaffThreadLastReadKey();
+    if (!key) return;
+
+    let latestMs = 0;
+    for (const m of this.userAdminMessages) {
+      const t = new Date(m.created_at).getTime();
+      if (!Number.isNaN(t) && t > latestMs) latestMs = t;
+    }
+    const iso = latestMs > 0 ? new Date(latestMs).toISOString() : new Date().toISOString();
+    this.staffThreadLastReadAt = iso;
+    localStorage.setItem(key, iso);
+  }
+
+  private loadAdminAccountProfile(): void {
+    if (!this.currentUser || this.currentUser.role !== 'admin' || !this.authToken) {
+      this.adminAccountProfile = null;
+      return;
+    }
+
+    this.adminAccountProfileError = '';
+    this.isLoadingAdminAccountProfile = true;
+    this.http
+      .get<AccountProfileResponse>(`${this.apiBaseUrl}/account`, { headers: this.getAuthHeaders() })
+      .subscribe({
+        next: (profile) => {
+          this.adminAccountProfile = profile;
+          this.isLoadingAdminAccountProfile = false;
+        },
+        error: (err) => {
+          this.adminAccountProfile = null;
+          this.isLoadingAdminAccountProfile = false;
+          this.adminAccountProfileError = err?.error?.error || 'Could not load your account details.';
+        },
+      });
+  }
+
+  /** Fetches active-thread count for sidebar badge without changing the messages list. */
+  private refreshAdminActiveInboxCount(): void {
+    if (!this.currentUser || this.currentUser.role !== 'admin' || !this.authToken) {
+      this.adminMessagesActiveThreadCount = 0;
+      return;
+    }
+
+    const params = new HttpParams().set('scope', 'active');
+    this.http
+      .get<AdminInboxMessageRow[]>(`${this.apiBaseUrl}/admin/messages`, {
+        headers: this.getAuthHeaders(),
+        params,
+      })
+      .subscribe({
+        next: (rows) => {
+          this.adminMessagesActiveThreadCount = new Set(rows.map((r) => r.thread_user_id)).size;
+        },
+        error: () => {
+          this.adminMessagesActiveThreadCount = 0;
+        },
+      });
+  }
+
+  private loadAdminInboxMessages(): void {
+    if (!this.currentUser || this.currentUser.role !== 'admin' || !this.authToken) {
+      this.adminInboxMessages = [];
+      this.adminSelectedThreadUserId = null;
+      return;
+    }
+
+    this.isLoadingAdminMessages = true;
+    this.adminMessagesLoadError = '';
+    const params = new HttpParams().set('scope', this.adminMessagesScope);
+    this.http
+      .get<AdminInboxMessageRow[]>(`${this.apiBaseUrl}/admin/messages`, {
+        headers: this.getAuthHeaders(),
+        params,
+      })
+      .subscribe({
+        next: (rows) => {
+          this.adminInboxMessages = rows;
+          this.isLoadingAdminMessages = false;
+          this.adminMessagesLoadError = '';
+          if (this.adminMessagesScope === 'active') {
+            this.adminMessagesActiveThreadCount = new Set(rows.map((r) => r.thread_user_id)).size;
+          }
+          const sel = this.adminSelectedThreadUserId;
+          if (sel && !rows.some((r) => r.thread_user_id === sel)) {
+            this.adminSelectedThreadUserId = null;
+          }
+          if (!this.adminSelectedThreadUserId && rows.length > 0) {
+            this.adminSelectedThreadUserId = this.pickLatestThreadUserId(rows);
+          }
+        },
+        error: (err) => {
+          this.adminInboxMessages = [];
+          this.isLoadingAdminMessages = false;
+          this.adminSelectedThreadUserId = null;
+          this.adminMessagesLoadError =
+            err?.error?.error || err?.message || 'Could not load messages. Try again or check the server logs.';
+        },
+      });
+  }
+
+  private buildAdminZipRows(resources: Resource[]): AdminZipSummaryRow[] {
+    const zipMap = new Map<string, AdminZipSummaryRow>();
+
+    resources.forEach((resource) => {
+      const zip = (resource.zip_code || '').trim();
+      if (!zip) return;
+
+      const key = zip;
+      const existing = zipMap.get(key) || {
+        zip,
+        city: resource.city || 'Unknown city',
+        food: 0,
+        health: 0,
+        jobs: 0,
+        housing: 0,
+        legal: 0,
+        government: 0,
+        total: 0,
+      };
+
+      const category = (resource.category_name || '').toLowerCase();
+      if (category === 'food') existing.food += 1;
+      if (category === 'health') existing.health += 1;
+      if (category === 'jobs') existing.jobs += 1;
+      if (category === 'housing') existing.housing += 1;
+      if (category === 'legal') existing.legal += 1;
+      if (category === 'government') existing.government += 1;
+      existing.total += 1;
+
+      if (!existing.city && resource.city) {
+        existing.city = resource.city;
+      }
+
+      zipMap.set(key, existing);
+    });
+
+    return Array.from(zipMap.values()).sort((a, b) => a.zip.localeCompare(b.zip));
+  }
+
   private getSavedResourcesKey(): string {
     if (!this.currentUser) return this.guestSavedResourcesKey;
     return `crf_saved_resources_${this.currentUser.id}`;
@@ -1512,7 +3573,35 @@ export class AppComponent implements OnInit, OnDestroy {
     return `crf_update_requests_${this.currentUser.id}`;
   }
 
-  private getFlaggedDateLabel(isoDate: string): string {
+  private getZipRequestArchivedViewKey(): string {
+    if (!this.currentUser) return '';
+    return `crf_zip_req_archived_${this.currentUser.id}`;
+  }
+
+  private loadZipRequestArchivedViewIds(): void {
+    this.userZipRequestArchivedViewIds.clear();
+    const key = this.getZipRequestArchivedViewKey();
+    if (!key) return;
+    const raw = localStorage.getItem(key);
+    if (!raw) return;
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (!Array.isArray(parsed)) return;
+      for (const id of parsed) {
+        if (typeof id === 'string') this.userZipRequestArchivedViewIds.add(id);
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  private persistZipRequestArchivedViewIds(): void {
+    const key = this.getZipRequestArchivedViewKey();
+    if (!key) return;
+    localStorage.setItem(key, JSON.stringify([...this.userZipRequestArchivedViewIds]));
+  }
+
+  getFlaggedDateLabel(isoDate: string): string {
     const date = new Date(isoDate);
     const today = new Date();
     const yesterday = new Date();
@@ -1526,5 +3615,22 @@ export class AppComponent implements OnInit, OnDestroy {
     if (sameDay(date, today)) return 'Today';
     if (sameDay(date, yesterday)) return 'Yesterday';
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  }
+
+  /** Month/day/year for admin Accounts (e.g. 04/27/2026). */
+  formatAdminAccountDate(isoDate: string | null | undefined): string {
+    if (!isoDate) return '—';
+    const date = new Date(isoDate);
+    if (Number.isNaN(date.getTime())) return '—';
+    return date.toLocaleDateString('en-US', {
+      month: '2-digit',
+      day: '2-digit',
+      year: 'numeric',
+    });
+  }
+
+  /** Month/day/year for chat timestamps (member and admin). */
+  formatChatDate(isoDate: string | null | undefined): string {
+    return this.formatAdminAccountDate(isoDate);
   }
 }

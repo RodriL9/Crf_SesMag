@@ -7,6 +7,39 @@ function fullName(firstName, lastName, fallbackEmail = '') {
   return joined || fallbackEmail.split('@')[0] || 'User';
 }
 
+async function getAccount(req, res, next) {
+  const userId = req.user.sub;
+
+  try {
+    const result = await pool.query(
+      `SELECT id, first_name, last_name, email, role, is_verified, created_at, updated_at
+       FROM users
+       WHERE id = $1
+       LIMIT 1;`,
+      [userId]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: 'User account not found.' });
+    }
+
+    const u = result.rows[0];
+    return res.json({
+      id: u.id,
+      email: u.email,
+      first_name: u.first_name,
+      last_name: u.last_name,
+      name: fullName(u.first_name, u.last_name, u.email),
+      role: u.role,
+      isEmailVerified: u.is_verified,
+      created_at: u.created_at,
+      updated_at: u.updated_at,
+    });
+  } catch (error) {
+    return next(error);
+  }
+}
+
 async function updateAccount(req, res, next) {
   const { email, currentPassword, newPassword } = req.body;
   const userId = req.user.sub;
@@ -102,6 +135,7 @@ async function deleteAccount(req, res, next) {
 }
 
 module.exports = {
+  getAccount,
   updateAccount,
   deleteAccount,
 };

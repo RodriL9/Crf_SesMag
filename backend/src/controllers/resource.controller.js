@@ -80,7 +80,56 @@ async function getResourceById(req, res, next) {
   }
 }
 
+async function verifyResource(req, res, next) {
+  const resourceId = req.params.id;
+  const actorId = req.user.sub;
+
+  try {
+    const currentResult = await pool.query(
+      'SELECT id, is_verified FROM resources WHERE id = $1 LIMIT 1;',
+      [resourceId]
+    );
+
+    if (currentResult.rowCount === 0) {
+      return res.status(404).json({ error: 'Resource not found.' });
+    }
+
+    const current = currentResult.rows[0];
+    if (current.is_verified) {
+      return res.json({ message: 'Resource is already verified.', resourceId, isVerified: true });
+    }
+
+    await pool.query(
+      `UPDATE resources
+       SET is_verified = TRUE,
+           verified_at = COALESCE(verified_at, NOW()),
+           verified_by = COALESCE(verified_by, $2),
+           updated_at = NOW()
+       WHERE id = $1;`,
+      [resourceId, actorId]
+    );
+
+    await pool.query(
+      `INSERT INTO resource_audit_log (resource_id, changed_by, action, changes)
+       VALUES ($1, $2, 'verified', $3::jsonb);`,
+      [
+        resourceId,
+        actorId,
+        JSON.stringify({
+          before: { is_verified: false },
+          after: { is_verified: true },
+        }),
+      ]
+    );
+
+    return res.json({ message: 'Resource verified successfully.', resourceId, isVerified: true });
+  } catch (error) {
+    return next(error);
+  }
+}
+
 module.exports = {
   searchResources,
   getResourceById,
+  verifyResource,
 };

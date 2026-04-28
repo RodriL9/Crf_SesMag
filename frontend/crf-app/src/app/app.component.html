@@ -90,18 +90,9 @@
                 <input [(ngModel)]="suggestionForm.zipOrCity" type="text" placeholder="Zip code or city" />
               </div>
 
-              <div class="rr-form-row rr-type-row">
-                @for (category of categories; track category.id) {
-                  <button
-                    type="button"
-                    class="rr-type-choice"
-                    [class.selected]="suggestionForm.categoryId === category.id"
-                    (click)="setSuggestionCategory(category.id)"
-                  >
-                    {{ category.icon }} {{ category.label }}
-                  </button>
-                }
-              </div>
+              <p class="rr-suggest-all-types-note">
+                This applies to <strong>all resource types</strong> (food, health, jobs, housing, legal, and government). You do not need to pick a category.
+              </p>
 
               <textarea [(ngModel)]="suggestionForm.notes" rows="3" placeholder="Anything else admin should know?"></textarea>
 
@@ -135,7 +126,7 @@
         }
       </div>
 
-      @if (!hasSearched) {
+      @if (!hasSearched || isLoading || allResults.length === 0) {
         <div class="crf-privacy-home">
           <span class="crf-privacy-home-icon">🔒</span>
           <p class="crf-privacy-home-text">
@@ -179,7 +170,7 @@
           <button type="button" class="db-nav-item" [class.active]="dashboardTab === 'notifications'" (click)="openDashboardNotifications()">
             <span>🔔</span>
             Notifications
-            <span class="db-badge">{{ unreadNotificationCount }}</span>
+            <span class="db-badge">{{ notificationCount }}</span>
           </button>
 
           <button type="button" class="db-nav-item" [class.active]="dashboardTab === 'saved'" (click)="openDashboardSavedResources()">
@@ -191,13 +182,19 @@
           <button type="button" class="db-nav-item" [class.active]="dashboardTab === 'flagged'" (click)="openDashboardFlaggedResources()">
             <span>🚩</span>
             Flagged Resources
-            <span class="db-badge">{{ flaggedResources.length }}</span>
+            <span class="db-badge">{{ userPendingFlaggedResourceCount }}</span>
           </button>
 
           <button type="button" class="db-nav-item" [class.active]="dashboardTab === 'updateRequests'" (click)="openDashboardUpdateRequests()">
             <span>📝</span>
-            Update Requests
-            <span class="db-badge">{{ updateRequests.length }}</span>
+            Zip/City Requests
+            <span class="db-badge">{{ userPendingZipUpdateRequestCount }}</span>
+          </button>
+
+          <button type="button" class="db-nav-item" [class.active]="dashboardTab === 'messages'" (click)="openDashboardMessages()">
+            <span>✉️</span>
+            Messages
+            <span class="db-badge">{{ userUnreadStaffMessageCount }}</span>
           </button>
 
           <button type="button" class="db-nav-item" [class.active]="dashboardTab === 'settings'" (click)="openDashboardAccountSettings()">
@@ -217,16 +214,24 @@
           @if (dashboardTab === 'notifications') {
             <div class="page-title-bar">
               <p class="page-title">Resource Notifications</p>
-              <span class="page-count">Sorted by date - {{ unreadNotificationCount }} unread</span>
+              <span class="page-count">Sorted by date · {{ notificationCount }} {{ notificationCount === 1 ? 'notification' : 'notifications' }}</span>
             </div>
             <div class="notif-list">
               @if (dashboardNotifications.length === 0) {
                 <article class="rr-card rr-empty">
-                  <p>No database edit notifications for your saved resources yet.</p>
+                  <p>No notifications to show. Updates to saved listings appear here; dismissed items stay hidden on this device.</p>
                 </article>
               } @else {
                 @for (item of dashboardNotifications; track item.id) {
                   <div class="notif-item">
+                    <button
+                      type="button"
+                      class="notif-dismiss"
+                      (click)="dismissDashboardNotification(item.id, $event)"
+                      aria-label="Dismiss notification"
+                    >
+                      ×
+                    </button>
                     <div class="notif-dot" [class.new]="item.isUnread" [class.read]="!item.isUnread"></div>
                     <div class="notif-body">
                       <p class="notif-title">
@@ -273,16 +278,58 @@
                   @if (expandedResourceId === resource.id) {
                     <article class="rr-card">
                       <div class="rr-card-body">
-                        <p class="rr-card-hours"><strong>Address:</strong> {{ resource.address }}, {{ resource.city || 'NJ' }}</p>
-                        <p class="rr-card-hours"><strong>Phone:</strong> {{ resource.phone_number || 'Not listed' }}</p>
-                        <p class="rr-card-hours">
-                          <strong>Website:</strong>
-                          @if (resource.website) {
-                            <a [href]="resource.website" target="_blank" rel="noopener noreferrer">{{ resource.website }}</a>
-                          } @else {
-                            Not listed
-                          }
+                        <div class="rr-card-heading">
+                          <h3>{{ resource.name }}</h3>
+                          <div class="rr-tag-list">
+                            @for (tag of getResourceTags(resource); track tag.label) {
+                              <span class="rr-tag {{ tag.className }}">{{ tag.label }}</span>
+                            }
+                          </div>
+                        </div>
+                        <p class="rr-card-hours"><strong>Address:</strong> {{ resource.address }}, {{ resource.city || 'NJ' }}, {{ resource.state || 'NJ' }}</p>
+                        <p class="rr-card-hours">{{ getHoursLine(resource) }}</p>
+
+                        @if (isOffline) {
+                          <p class="rr-offline-map-note">Map unavailable offline.</p>
+                        } @else {
+                          <div class="rr-map-embed-wrap">
+                            <iframe
+                              class="rr-map-embed"
+                              [src]="getGoogleMapsEmbedUrl(resource)"
+                              loading="lazy"
+                              referrerpolicy="no-referrer-when-downgrade"
+                              title="Resource location map"
+                            ></iframe>
+                          </div>
+                        }
+
+                        @if (resource.website) {
+                          <p><strong>Website:</strong> <a [href]="resource.website" target="_blank" rel="noopener noreferrer">{{ resource.website }}</a> <span class="rr-external-inline">(opens external site)</span></p>
+                        } @else {
+                          <p><strong>Website:</strong> Not listed</p>
+                        }
+
+                        <p>
+                          <strong>Map:</strong>
+                          <a [href]="getGoogleMapsUrl(resource)" target="_blank" rel="noopener noreferrer">
+                            Open in Google Maps
+                          </a>
+                          <span class="rr-external-inline">(opens external map app/site)</span>
                         </p>
+
+                        @if (resource.description) {
+                          <p><strong>About:</strong> {{ resource.description }}</p>
+                        }
+
+                        @if (resource.hours_of_operation) {
+                          <p><strong>Hours:</strong> {{ resource.hours_of_operation }}</p>
+                        }
+
+                        <p><strong>Phone:</strong> {{ resource.phone_number || 'Not listed' }}</p>
+
+                        @if (resource.requirements) {
+                          <p><strong>What you need to bring:</strong> {{ resource.requirements }}</p>
+                        }
                       </div>
                       <div class="rr-card-right">
                         <a
@@ -304,7 +351,7 @@
           } @else if (dashboardTab === 'flagged') {
             <div class="page-title-bar">
               <p class="page-title">Your Flagged Resources</p>
-              <span class="page-count">{{ flaggedResources.length }} flagged · under review</span>
+              <span class="page-count">{{ userPendingFlaggedResourceCount }} pending</span>
             </div>
             <div class="flagged-list">
               @if (flaggedResources.length === 0) {
@@ -321,32 +368,110 @@
                       <div class="saved-body">
                         <p class="saved-name">{{ item.resource.name }}</p>
                         <p class="saved-addr">{{ item.resource.address }} - flagged {{ item.flaggedDateLabel }}</p>
+                        <span
+                          class="flag-status-pill"
+                          [class.flag-status-corrected]="item.status === 'corrected'"
+                          [class.flag-status-declined]="item.status === 'declined'"
+                        >
+                          {{ item.statusLabel || 'Pending review' }}
+                        </span>
                       </div>
                       <div class="saved-actions">
                         <button type="button" class="btn-sm btn-view" (click)="viewFlaggedResource(item.id)">
                           {{ expandedFlaggedResourceId === item.id ? 'Hide' : 'View' }}
                         </button>
-                        <button type="button" class="btn-sm btn-remove" (click)="removeFlaggedResource(item.id)">
-                          Remove flag
-                        </button>
+                        @if (item.status === 'corrected' || item.status === 'declined') {
+                          <button type="button" class="btn-sm btn-remove btn-minus-only" (click)="removeFlaggedResource(item.id)">−</button>
+                        } @else {
+                          <button type="button" class="btn-sm btn-remove" (click)="removeFlaggedResource(item.id)">
+                            Remove flag
+                          </button>
+                        }
                       </div>
                     </div>
                     <span class="flag-reason">🚩 Your note: "{{ item.reason }}"</span>
+                    @if (item.handledSummary) {
+                      <p class="flag-handled-line">{{ item.handledSummary }}</p>
+                    }
+                    @if (item.adminReviewNote && item.status !== 'pending') {
+                      <p class="flag-admin-note"><strong>Admin note:</strong> {{ item.adminReviewNote }}</p>
+                    }
                   </article>
 
                   @if (expandedFlaggedResourceId === item.id) {
                     <article class="rr-card">
                       <div class="rr-card-body">
-                        <p class="rr-card-hours"><strong>Address:</strong> {{ item.resource.address }}, {{ item.resource.city || 'NJ' }}</p>
-                        <p class="rr-card-hours"><strong>Phone:</strong> {{ item.resource.phone_number || 'Not listed' }}</p>
+                        <div class="rr-card-heading">
+                          <h3>{{ item.resource.name }}</h3>
+                          <div class="rr-tag-list">
+                            @for (tag of getResourceTags(item.resource); track tag.label) {
+                              <span class="rr-tag {{ tag.className }}">{{ tag.label }}</span>
+                            }
+                          </div>
+                        </div>
                         <p class="rr-card-hours">
-                          <strong>Website:</strong>
-                          @if (item.resource.website) {
-                            <a [href]="item.resource.website" target="_blank" rel="noopener noreferrer">{{ item.resource.website }}</a>
-                          } @else {
-                            Not listed
-                          }
+                          <strong>Address:</strong>
+                          {{ item.resource.address }}, {{ item.resource.city || 'NJ' }}, {{ item.resource.state || 'NJ' }}
                         </p>
+                        <p class="rr-card-hours">{{ getHoursLine(item.resource) }}</p>
+
+                        @if (isOffline) {
+                          <p class="rr-offline-map-note">Map unavailable offline.</p>
+                        } @else {
+                          <div class="rr-map-embed-wrap">
+                            <iframe
+                              class="rr-map-embed"
+                              [src]="getGoogleMapsEmbedUrl(item.resource)"
+                              loading="lazy"
+                              referrerpolicy="no-referrer-when-downgrade"
+                              title="Resource location map"
+                            ></iframe>
+                          </div>
+                        }
+
+                        @if (item.resource.website) {
+                          <p>
+                            <strong>Website:</strong>
+                            <a [href]="item.resource.website" target="_blank" rel="noopener noreferrer">{{ item.resource.website }}</a>
+                            <span class="rr-external-inline">(opens external site)</span>
+                          </p>
+                        } @else {
+                          <p><strong>Website:</strong> Not listed</p>
+                        }
+
+                        <p>
+                          <strong>Map:</strong>
+                          <a [href]="getGoogleMapsUrl(item.resource)" target="_blank" rel="noopener noreferrer">
+                            Open in Google Maps
+                          </a>
+                          <span class="rr-external-inline">(opens external map app/site)</span>
+                        </p>
+
+                        @if (item.resource.description) {
+                          <p><strong>About:</strong> {{ item.resource.description }}</p>
+                        }
+
+                        @if (item.resource.hours_of_operation) {
+                          <p><strong>Hours:</strong> {{ item.resource.hours_of_operation }}</p>
+                        }
+
+                        <p><strong>Phone:</strong> {{ item.resource.phone_number || 'Not listed' }}</p>
+
+                        @if (item.resource.requirements) {
+                          <p><strong>What you need to bring:</strong> {{ item.resource.requirements }}</p>
+                        }
+                      </div>
+                      <div class="rr-card-right">
+                        <a
+                          class="rr-map-link"
+                          [href]="getGoogleMapsUrl(item.resource)"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title="Open in Google Maps"
+                        >
+                          <span class="rr-pin">📍</span>
+                          <span class="rr-map-link-text">Go to Google Maps</span>
+                        </a>
                       </div>
                     </article>
                   }
@@ -355,8 +480,8 @@
             </div>
           } @else if (dashboardTab === 'updateRequests') {
             <div class="page-title-bar">
-              <p class="page-title">Resource Inclusion Requests</p>
-              <span class="page-count">{{ updateRequests.length }} submissions</span>
+              <p class="page-title">Zip/City Requests</p>
+              <span class="page-count">{{ userPendingZipUpdateRequestCount }} pending</span>
             </div>
             <div class="update-request-form">
               <div class="update-request-row">
@@ -365,7 +490,7 @@
                     type="text"
                     maxlength="5"
                     inputmode="numeric"
-                    placeholder="Enter ZIP code (e.g., 10029) to request resources"
+                    placeholder="Enter a valid US ZIP code (5 digits) to request resources"
                     [(ngModel)]="updateRequestZip"
                   />
                 </div>
@@ -379,13 +504,24 @@
               }
             </div>
             <div class="sub-list">
-              @if (updateRequests.length === 0) {
+              @if (userZipUpdateRequests.length === 0) {
                 <article class="rr-card rr-empty">
                   <p>No update requests submitted yet.</p>
                 </article>
               } @else {
-                @for (item of updateRequests; track item.id) {
-                  <article class="sub-item">
+                @for (item of userZipUpdateRequests; track item.id) {
+                  <article class="sub-item sub-item--zip-request">
+                    @if (item.status === 'reviewed' || item.status === 'declined') {
+                      <button
+                        type="button"
+                        class="sub-item-archive-dismiss"
+                        (click)="archiveUserZipRequestFromDashboard(item)"
+                        aria-label="Archive request"
+                        title="Remove from your list"
+                      >
+                        ×
+                      </button>
+                    }
                     <div class="sub-top">
                       <div class="sub-icon" [style.background]="getSavedResourceIconBackground(item.resource)">
                         {{ getSavedResourceIcon(item.resource) }}
@@ -399,15 +535,127 @@
                           {{ getUpdateRequestStatusLabel(item.status) }}
                         </span>
                         @if (item.status === 'pending') {
-                          <button type="button" class="btn-sm btn-withdraw" (click)="withdrawUpdateRequest(item.id)">
-                            Withdraw
+                          <button type="button" class="btn-sm btn-withdraw" (click)="cancelUpdateRequest(item.id)">
+                            Cancel request
                           </button>
                         }
                       </div>
                     </div>
                     <span class="sub-reason">📝 Your request: "{{ item.note }}"</span>
+                    @if (item.handledSummary) {
+                      <p class="flag-handled-line zip-handled-line">{{ item.handledSummary }}</p>
+                    }
+                    @if (item.adminReviewNote && item.status !== 'pending') {
+                      <p class="flag-admin-note"><strong>Admin note:</strong> {{ item.adminReviewNote }}</p>
+                    }
                   </article>
                 }
+              }
+            </div>
+          } @else if (dashboardTab === 'messages') {
+            <div class="page-title-bar">
+              <p class="page-title">Messages with staff</p>
+              <span class="page-count">
+                @if (userStaffThreadExpanded) {
+                  Conversation
+                } @else {
+                  Tap below to open your thread
+                }
+              </span>
+            </div>
+            <div class="user-messages-panel">
+              @if (!userStaffThreadExpanded) {
+                @if (isLoadingUserMessages) {
+                  <article class="rr-card rr-empty">
+                    <p>Loading…</p>
+                  </article>
+                } @else {
+                  <button
+                    type="button"
+                    class="user-staff-thread-summary-card"
+                    (click)="expandUserStaffThread()"
+                    aria-label="Open conversation with staff"
+                  >
+                    <div class="user-staff-thread-summary-main">
+                      <span class="user-staff-thread-summary-title">{{ userStaffCollapsedTitle }}</span>
+                      <span class="user-staff-thread-summary-detail">{{ userStaffCollapsedDetail }}</span>
+                    </div>
+                    <span class="user-staff-thread-summary-action" aria-hidden="true">Open</span>
+                  </button>
+                }
+              } @else {
+                <div class="user-staff-thread-expanded">
+                  <button type="button" class="user-staff-thread-back rr-save-btn" (click)="collapseUserStaffThread()">
+                    ← Back to messages
+                  </button>
+                  <div class="user-messages-thread-wrap">
+                    @if (userThreadArchivedByStaff) {
+                      <article class="rr-card user-thread-closed-banner">
+                        <p class="user-thread-closed-title"><strong>Admin archived this chat.</strong></p>
+                        <p class="user-thread-closed-sub">Problem corrected.</p>
+                        @if (!userChoseContinueStaffChat) {
+                          <p class="user-thread-closed-hint">You can start a new message anytime if you need the team again.</p>
+                          <button type="button" class="btn-save user-thread-closed-cta" (click)="beginNewStaffMessage()">
+                            Start a new message
+                          </button>
+                        }
+                      </article>
+                    }
+                    @if (userAdminMessages.length === 0 && !userThreadArchivedByStaff) {
+                      <article class="rr-card rr-empty">
+                        <p>No messages yet. Say hello below — staff can reply here.</p>
+                      </article>
+                    } @else if (userAdminMessages.length > 0) {
+                      <div
+                        class="msg-thread-chat user-msg-thread"
+                        [class.user-msg-thread--closed]="userThreadArchivedByStaff && !userChoseContinueStaffChat"
+                      >
+                        @for (msg of userAdminMessages; track msg.id) {
+                          <div
+                            class="msg-bubble"
+                            [class.msg-bubble--me]="isUserMessageFromMe(msg)"
+                            [class.msg-bubble--staff]="msg.sender_role === 'admin'"
+                          >
+                            <p class="msg-bubble-meta">
+                              @if (isUserMessageFromMe(msg)) {
+                                You
+                              } @else {
+                                {{ msg.sender_name?.trim() || 'Staff' }}
+                              }
+                              · {{ formatChatDate(msg.created_at) }}
+                            </p>
+                            <p class="msg-bubble-body">{{ msg.body }}</p>
+                          </div>
+                        }
+                      </div>
+                    }
+                  </div>
+                  @if (showUserStaffMessageCompose) {
+                    <div class="user-message-compose">
+                      <label class="settings-label" for="user-message-body">Your message</label>
+                      <textarea
+                        id="user-message-body"
+                        class="user-message-textarea"
+                        rows="4"
+                        maxlength="8000"
+                        placeholder="Type a message to the team…"
+                        [(ngModel)]="userMessageBody"
+                        [disabled]="isSendingUserMessage"
+                      ></textarea>
+                      <div class="user-message-actions">
+                        <button type="button" class="btn-save" (click)="submitUserAdminMessage()" [disabled]="isSendingUserMessage">
+                          {{ isSendingUserMessage ? 'Sending…' : 'Send' }}
+                        </button>
+                      </div>
+                      @if (userMessageError) {
+                        <p class="rr-form-error">{{ userMessageError }}</p>
+                      }
+                      @if (userMessageSuccess) {
+                        <p class="rr-form-success">{{ userMessageSuccess }}</p>
+                      }
+                    </div>
+                  }
+                </div>
               }
             </div>
           } @else if (dashboardTab === 'settings') {
@@ -700,6 +948,19 @@
                       <button type="button" class="rr-save-btn rr-flag-btn" (click)="openFlagResource(resource.id)">
                         Flag resource
                       </button>
+                      @if (!resource.is_verified) {
+                        <button type="button" class="rr-save-btn rr-verify-btn" (click)="verifyResource(resource)">
+                          Verify resource
+                        </button>
+                      } @else {
+                        <span class="rr-verified-pill">Verified</span>
+                      }
+                      @if (verifyRequestResourceId === resource.id && verifyRequestError) {
+                        <p class="rr-form-error">{{ verifyRequestError }}</p>
+                      }
+                      @if (verifyRequestResourceId === resource.id && verifyRequestSuccess) {
+                        <p class="rr-form-success">{{ verifyRequestSuccess }}</p>
+                      }
                     </div>
                   @if (flaggingResourceId === resource.id) {
                     <div class="rr-flag-form">
@@ -728,37 +989,842 @@
         </div>
       </div>
 
-      @if (showDeleteModal) {
-        <div class="modal-overlay visible">
-          <div class="modal-card">
-            <p class="modal-title">Delete your account?</p>
-            <p class="modal-sub">Please enter your password to confirm. This action cannot be undone.</p>
-            <div class="field-input">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9FE1CB" stroke-width="2">
-                <rect x="3" y="11" width="18" height="11" rx="2" />
-                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-              </svg>
-              <input [type]="showDeletePassword ? 'text' : 'password'" placeholder="Enter your password" [(ngModel)]="deletePassword" />
-              <button
-                type="button"
-                class="password-toggle-btn"
-                (click)="showDeletePassword = !showDeletePassword"
-                [attr.aria-label]="showDeletePassword ? 'Hide password' : 'Show password'"
-              >
-                {{ showDeletePassword ? '🙈' : '👁' }}
-              </button>
-            </div>
-            @if (deleteError) {
-              <p class="rr-form-error">{{ deleteError }}</p>
-            }
-            <div class="modal-warning">Deleting your account will remove saved resources, flagged items, and account data.</div>
-            <div class="modal-row">
-              <button type="button" class="btn-cancel" (click)="closeDeleteModal()">Cancel</button>
-              <button type="button" class="btn-confirm-delete" (click)="confirmDeleteAccount()">Yes, delete my account</button>
+    </section>
+  } @else if (viewMode === 'adminDashboard') {
+    <section class="db-page">
+      <div class="db-wrap admin-db-wrap">
+        <aside class="db-sidebar">
+          <div class="db-user-chip">
+            <div class="db-avatar">{{ getDashboardUserInitials() }}</div>
+            <div>
+              <p class="db-user-name">{{ getDashboardUserName() }}</p>
+              <span class="db-admin-badge">⚙ Administrator</span>
             </div>
           </div>
+
+          <button type="button" class="db-nav-item" [class.active]="adminTab === 'resources'" (click)="openAdminTab('resources')">
+            <span>🗂️</span>
+            Database Resources
+          </button>
+
+          <button type="button" class="db-nav-item" [class.active]="adminTab === 'messages'" (click)="openAdminTab('messages')">
+            <span>✉️</span>
+            Messages
+            <span class="db-badge">{{ adminMessagesActiveThreadCount }}</span>
+          </button>
+
+          <button type="button" class="db-nav-item" [class.active]="adminTab === 'zipRequests'" (click)="openAdminTab('zipRequests')">
+            <span>🌐</span>
+            Zip/City Requests
+            <span class="db-badge">{{ adminPendingZipCodeRequests.length }}</span>
+          </button>
+
+          <button type="button" class="db-nav-item" [class.active]="adminTab === 'flagged'" (click)="openAdminTab('flagged')">
+            <span>🚩</span>
+            Flagged Resources
+            <span class="db-badge">{{ adminPendingFlaggedSubmissions.length }}</span>
+          </button>
+
+          <button type="button" class="db-nav-item" [class.active]="adminTab === 'accounts'" (click)="openAdminTab('accounts')">
+            <span>👥</span>
+            Accounts
+            <span class="db-badge">{{ adminUserCount }}</span>
+          </button>
+
+          <div class="db-divider"></div>
+          <div class="db-spacer"></div>
+
+          <button type="button" class="db-settings" [class.active]="adminTab === 'settings'" (click)="openAdminTab('settings')">
+            <span>⚙️</span>
+            Your Account Settings
+          </button>
+
+          <button type="button" class="db-logout" (click)="logout()">
+            <span>↪</span>
+            Log out
+          </button>
+        </aside>
+
+        <div class="db-main">
+          @if (adminTab === 'resources') {
+            <div class="page-title-bar">
+              <p class="page-title">Database Resources</p>
+              <span class="page-count">{{ adminResourceTotalCount }} total resources</span>
+            </div>
+
+            <div class="action-row">
+              <div class="zip-search-wrap">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9FE1CB" stroke-width="2">
+                  <circle cx="11" cy="11" r="7" />
+                  <line x1="16.5" y1="16.5" x2="22" y2="22" />
+                </svg>
+                <input
+                  type="text"
+                  maxlength="40"
+                  placeholder="Search by zip code or city..."
+                  [(ngModel)]="adminSearchTerm"
+                />
+              </div>
+            </div>
+
+            @if (adminDashboardError) {
+              <p class="rr-form-error">{{ adminDashboardError }}</p>
+            }
+
+            @if (isAdminLoading) {
+              <article class="rr-card rr-empty">
+                <p>Loading resources...</p>
+              </article>
+            } @else {
+              @if (!adminSelectedZip) {
+                <div class="zip-table">
+                  <div class="zip-table-header">
+                    <span>Zip / City</span>
+                    <span>Food</span>
+                    <span>Health</span>
+                    <span>Jobs</span>
+                    <span>Housing</span>
+                    <span>Legal</span>
+                    <span>Govt</span>
+                    <span>Total</span>
+                  </div>
+
+                  @if (adminVisibleZipRows.length === 0) {
+                    <article class="rr-card rr-empty admin-empty-card">
+                      <p>No ZIP/city rows match your search.</p>
+                    </article>
+                  } @else {
+                    @for (row of adminVisibleZipRows; track row.zip) {
+                      <div class="zip-row">
+                        <div>
+                          <p class="zip-code">{{ row.zip }}</p>
+                          <p class="zip-city">{{ row.city }}</p>
+                        </div>
+                        <button type="button" class="zip-count-btn" [disabled]="row.food === 0" (click)="viewAdminResourcesForZipCategory(row.zip, 'food')">{{ row.food }}</button>
+                        <button type="button" class="zip-count-btn" [disabled]="row.health === 0" (click)="viewAdminResourcesForZipCategory(row.zip, 'health')">{{ row.health }}</button>
+                        <button type="button" class="zip-count-btn" [disabled]="row.jobs === 0" (click)="viewAdminResourcesForZipCategory(row.zip, 'jobs')">{{ row.jobs }}</button>
+                        <button type="button" class="zip-count-btn" [disabled]="row.housing === 0" (click)="viewAdminResourcesForZipCategory(row.zip, 'housing')">{{ row.housing }}</button>
+                        <button type="button" class="zip-count-btn" [disabled]="row.legal === 0" (click)="viewAdminResourcesForZipCategory(row.zip, 'legal')">{{ row.legal }}</button>
+                        <button type="button" class="zip-count-btn" [disabled]="row.government === 0" (click)="viewAdminResourcesForZipCategory(row.zip, 'government')">{{ row.government }}</button>
+                        <button type="button" class="zip-count-btn zip-count-total" [disabled]="row.total === 0" (click)="viewAdminResourcesForZipCategory(row.zip, 'all')">{{ row.total }}</button>
+                      </div>
+                    }
+                  }
+                  <div class="zip-footer">Showing {{ adminVisibleZipRows.length }} zip/city rows</div>
+                </div>
+              } @else {
+                <div class="db-selected-header">
+                  <h3>Resources for ZIP {{ adminSelectedZip }} · {{ adminSelectedCategoryLabel }}</h3>
+                  <button type="button" class="rr-save-btn db-back-categories-btn" (click)="backToAdminZipTable()">
+                    Back to zip list
+                  </button>
+                </div>
+
+                <div class="db-results-wrap">
+                  @if (adminSelectedResources.length === 0) {
+                    <article class="rr-card rr-empty">
+                      <p>No resources found for this ZIP/category.</p>
+                    </article>
+                  } @else {
+                    @for (resource of adminSelectedResources; track resource.id; let i = $index) {
+                      <article class="rr-card">
+                        <div class="rr-card-icon-wrap">{{ getResultIcon(i) }}</div>
+                        <div class="rr-card-body">
+                          <p class="rr-card-name">{{ resource.name }}</p>
+                          <button
+                            type="button"
+                            class="rr-card-address"
+                            (click)="toggleAdminResourceDetails(resource.id)"
+                          >
+                            <span class="rr-address-main">
+                              📍 {{ resource.address }}, {{ resource.city || 'NJ' }}, {{ resource.state || 'NJ' }} {{ resource.zip_code }}
+                            </span>
+                            <span class="rr-see-details">
+                              {{ adminExpandedResourceDetailId === resource.id ? 'Hide details' : 'See details' }}
+                            </span>
+                          </button>
+                          <div class="rr-card-tags">
+                            @for (tag of getResourceTags(resource); track tag.label) {
+                              <span class="rr-tag {{ tag.className }}">{{ tag.label }}</span>
+                            }
+                          </div>
+                          <p class="rr-card-hours">{{ getHoursLine(resource) }}</p>
+                          <p class="rr-card-hours">Category: {{ resource.category_name || 'Uncategorized' }}</p>
+                          @if (adminExpandedResourceDetailId === resource.id) {
+                            <div class="rr-card-details">
+                              @if (isOffline) {
+                                <p class="rr-offline-map-note">Map unavailable offline.</p>
+                              } @else {
+                                <div class="rr-map-embed-wrap">
+                                  <iframe
+                                    class="rr-map-embed"
+                                    [src]="getGoogleMapsEmbedUrl(resource)"
+                                    loading="lazy"
+                                    referrerpolicy="no-referrer-when-downgrade"
+                                    title="Resource location map"
+                                  ></iframe>
+                                </div>
+                              }
+                              @if (resource.phone_number) {
+                                <p><strong>Phone:</strong> {{ resource.phone_number }}</p>
+                              } @else {
+                                <p><strong>Phone:</strong> Not listed</p>
+                              }
+                              @if (resource.description) {
+                                <p><strong>Description:</strong> {{ resource.description }}</p>
+                              }
+                              @if (resource.requirements) {
+                                <p><strong>Requirements:</strong> {{ resource.requirements }}</p>
+                              }
+                              @if (resource.website) {
+                                <p>
+                                  <strong>Website:</strong>
+                                  <a [href]="resource.website" target="_blank" rel="noopener noreferrer">{{ resource.website }}</a>
+                                  <span class="rr-external-inline">(opens external site)</span>
+                                </p>
+                              } @else {
+                                <p><strong>Website:</strong> Not listed</p>
+                              }
+                              <p>
+                                <strong>Map:</strong>
+                                <a [href]="getGoogleMapsUrl(resource)" target="_blank" rel="noopener noreferrer">Open in Google Maps</a>
+                                <span class="rr-external-inline">(opens external map app/site)</span>
+                              </p>
+                            </div>
+                          }
+                        </div>
+                        <div class="rr-card-right admin-resource-stats">
+                          <button type="button" class="admin-stat-pill admin-stat-btn" (click)="toggleAdminPendingFlags(resource.id)">
+                            🚩 Pending Flags: {{ getAdminPendingFlagCount(resource) }}
+                          </button>
+                          <div class="admin-stat-pill">🔖 Saves: {{ getAdminSaveCount(resource) }}</div>
+                          <button type="button" class="rr-save-btn admin-edit-btn" (click)="openAdminResourceEditor(resource)">
+                            Edit
+                          </button>
+                        </div>
+                        @if (adminExpandedFlagResourceId === resource.id) {
+                          <div class="admin-flag-panel">
+                            <p class="admin-flag-title">Pending flags for {{ resource.name }}</p>
+                            @if (getAdminPendingFlags(resource).length === 0) {
+                              <p class="admin-flag-empty">No pending flags for this resource.</p>
+                            } @else {
+                              @for (flag of getAdminPendingFlags(resource); track flag.id) {
+                                <div class="admin-flag-item">
+                                  <p class="admin-flag-text">{{ getAdminFlagReason(flag) }}</p>
+                                  <p class="admin-flag-meta">Submitted {{ getFlaggedDateLabel(flag.created_at) }} · {{ flag.zip_or_city }}</p>
+                                </div>
+                              }
+                            }
+                          </div>
+                        }
+                        @if (adminEditingResourceId === resource.id) {
+                          <div class="admin-edit-panel" [class.admin-edit-panel--collapsed]="adminEditPanelCollapsed">
+                            <div class="admin-edit-panel-header">
+                              <p class="admin-edit-title">
+                                {{ adminEditPanelCollapsed ? 'Edit resource (minimized)' : 'Edit resource' }}
+                              </p>
+                              <button
+                                type="button"
+                                class="admin-edit-minimize-btn"
+                                (click)="toggleAdminEditPanelCollapsed()"
+                                [attr.aria-expanded]="!adminEditPanelCollapsed"
+                                [attr.aria-label]="adminEditPanelCollapsed ? 'Expand edit form' : 'Minimize edit form'"
+                              >
+                                @if (adminEditPanelCollapsed) {
+                                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                                    <path d="M6 9l6 6 6-6" />
+                                  </svg>
+                                } @else {
+                                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                                    <path d="M5 12h14" />
+                                  </svg>
+                                }
+                              </button>
+                            </div>
+                            @if (!adminEditPanelCollapsed) {
+                              <div class="admin-edit-grid">
+                                <input type="text" [(ngModel)]="adminEditForm.name" placeholder="Resource name" />
+                                <input type="text" [(ngModel)]="adminEditForm.address" placeholder="Address" />
+                                <input type="text" [(ngModel)]="adminEditForm.city" placeholder="City" />
+                                <input type="text" [(ngModel)]="adminEditForm.state" placeholder="State" />
+                                <input type="text" [(ngModel)]="adminEditForm.zipCode" placeholder="ZIP code" />
+                                <input type="text" [(ngModel)]="adminEditForm.phoneNumber" placeholder="Phone number" />
+                                <input type="text" [(ngModel)]="adminEditForm.hoursOfOperation" placeholder="Hours of operation" />
+                                <input type="text" [(ngModel)]="adminEditForm.website" placeholder="Website" />
+                                <label class="admin-edit-check">
+                                  <input type="checkbox" [(ngModel)]="adminEditForm.isVerified" />
+                                  Verified listing
+                                </label>
+                              </div>
+
+                              @if (adminEditError) {
+                                <p class="rr-form-error">{{ adminEditError }}</p>
+                              }
+                              @if (adminEditSuccess) {
+                                <p class="rr-form-success">{{ adminEditSuccess }}</p>
+                              }
+
+                              <div class="rr-flag-actions">
+                                <button type="button" class="rr-submit-btn" [disabled]="isAdminSavingEdit" (click)="submitAdminResourceEdit(resource.id)">
+                                  {{ isAdminSavingEdit ? 'Saving...' : 'Save changes' }}
+                                </button>
+                                <button type="button" class="rr-save-btn" (click)="cancelAdminResourceEdit()">Cancel</button>
+                              </div>
+                            } @else {
+                              <p class="admin-edit-collapsed-hint">Your edits are kept in memory. Expand to continue, save, or cancel.</p>
+                              <div class="rr-flag-actions admin-edit-collapsed-actions">
+                                <button type="button" class="rr-save-btn" (click)="cancelAdminResourceEdit()">Cancel editing</button>
+                              </div>
+                            }
+                          </div>
+                        }
+                      </article>
+                    }
+                  }
+                </div>
+              }
+            }
+          } @else if (adminTab === 'messages') {
+            <div class="page-title-bar">
+              <p class="page-title">Member messages</p>
+              <span class="page-count">{{ adminMessageThreads.length }} conversations · {{ adminInboxMessages.length }} messages</span>
+            </div>
+            <div class="admin-messages-scope-row">
+              <button
+                type="button"
+                class="admin-scope-btn"
+                [class.active]="adminMessagesScope === 'active'"
+                (click)="setAdminMessagesScope('active')"
+              >
+                Active
+              </button>
+              <button
+                type="button"
+                class="admin-scope-btn"
+                [class.active]="adminMessagesScope === 'archived'"
+                (click)="setAdminMessagesScope('archived')"
+              >
+                Archived
+              </button>
+            </div>
+            <p class="admin-panel-note admin-messages-intro">
+              Two-way chat with members. Archive a thread when you are done—it stays in <strong>Archived</strong> for reference. If you archived chats, open <strong>Archived</strong> to see them again. For ZIP coverage or listing fixes, still use <strong>Zip/City Requests</strong> and <strong>Flagged Resources</strong>.
+            </p>
+            @if (isLoadingAdminMessages) {
+              <article class="rr-card rr-empty admin-panel-note">
+                <p>Loading messages…</p>
+              </article>
+            } @else if (adminMessagesLoadError) {
+              <article class="rr-card rr-empty admin-panel-note admin-messages-load-failed">
+                <p class="rr-form-error admin-messages-load-failed-msg">{{ adminMessagesLoadError }}</p>
+                <p class="admin-panel-note admin-messages-load-failed-hint">Leave this tab and open <strong>Messages</strong> again to retry.</p>
+              </article>
+            } @else if (adminInboxMessages.length === 0) {
+              <article class="rr-card rr-empty admin-panel-note">
+                @if (adminMessagesScope === 'archived') {
+                  <p>No archived conversations.</p>
+                } @else {
+                  <p>No active conversations.</p>
+                }
+              </article>
+            } @else {
+              <div class="admin-messages-layout">
+                <aside class="admin-messages-thread-list" aria-label="Conversations">
+                  @for (t of adminMessageThreads; track t.threadUserId) {
+                    <button
+                      type="button"
+                      class="admin-thread-pill"
+                      [class.active]="adminSelectedThreadUserId === t.threadUserId"
+                      (click)="selectAdminMessageThread(t.threadUserId)"
+                    >
+                      <span class="admin-thread-pill-name">{{ t.label }}</span>
+                      <span class="admin-thread-pill-preview">{{ t.preview }}</span>
+                      <span class="admin-thread-pill-date">{{ formatChatDate(t.lastMessageAt) }}</span>
+                    </button>
+                  }
+                </aside>
+                <div class="admin-messages-thread-pane">
+                  @if (adminSelectedThreadUserId) {
+                    <div class="msg-thread-chat admin-msg-thread">
+                      @for (msg of adminSelectedThreadMessages; track msg.id) {
+                        <div
+                          class="msg-bubble"
+                          [class.msg-bubble--me]="msg.sender_role === 'admin'"
+                          [class.msg-bubble--member]="msg.sender_role === 'user'"
+                        >
+                          <p class="msg-bubble-meta">
+                            {{ getAdminMessageBubbleLabel(msg) }} · {{ formatChatDate(msg.created_at) }}
+                          </p>
+                          <p class="msg-bubble-body">{{ msg.body }}</p>
+                        </div>
+                      }
+                    </div>
+                    <div class="admin-thread-actions">
+                      @if (adminMessagesScope === 'active') {
+                        <button
+                          type="button"
+                          class="rr-save-btn admin-archive-thread-btn"
+                          [disabled]="isArchivingAdminThread"
+                          (click)="archiveAdminMessageThread()"
+                        >
+                          {{ isArchivingAdminThread ? 'Working…' : 'Archive conversation' }}
+                        </button>
+                      } @else {
+                        <button
+                          type="button"
+                          class="btn-save admin-restore-thread-btn"
+                          [disabled]="isArchivingAdminThread"
+                          (click)="unarchiveAdminMessageThread()"
+                        >
+                          {{ isArchivingAdminThread ? 'Working…' : 'Restore to active inbox' }}
+                        </button>
+                      }
+                    </div>
+                    @if (adminArchiveThreadError) {
+                      <p class="rr-form-error admin-archive-thread-error">{{ adminArchiveThreadError }}</p>
+                    }
+                    <div class="admin-reply-compose">
+                      <label class="settings-label" for="admin-reply-body">Reply</label>
+                      <textarea
+                        id="admin-reply-body"
+                        class="user-message-textarea"
+                        rows="4"
+                        maxlength="8000"
+                        placeholder="Write a reply to this member…"
+                        [(ngModel)]="adminReplyBody"
+                        [disabled]="isSendingAdminReply"
+                      ></textarea>
+                      <div class="user-message-actions">
+                        <button type="button" class="btn-save" (click)="submitAdminThreadReply()" [disabled]="isSendingAdminReply">
+                          {{ isSendingAdminReply ? 'Sending…' : 'Send reply' }}
+                        </button>
+                      </div>
+                      @if (adminReplyError) {
+                        <p class="rr-form-error">{{ adminReplyError }}</p>
+                      }
+                      @if (adminReplySuccess) {
+                        <p class="rr-form-success">{{ adminReplySuccess }}</p>
+                      }
+                    </div>
+                  } @else {
+                    <article class="rr-card rr-empty admin-panel-note">
+                      <p>Select a conversation.</p>
+                    </article>
+                  }
+                </div>
+              </div>
+            }
+          } @else if (adminTab === 'zipRequests') {
+            <div class="page-title-bar">
+              <p class="page-title">Zip/City Requests</p>
+              <div class="page-title-actions">
+                <span class="page-count">
+                  {{ adminPendingZipCodeRequests.length }} pending · {{ adminZipCodeRequestsActive.length }} active
+                  @if (adminZipCodeRequestsCancelled.length > 0) {
+                    · {{ adminZipCodeRequestsCancelled.length }} cancelled
+                  }
+                </span>
+                <div class="admin-zip-import-row">
+                  <div class="field-input">
+                    <input
+                      type="text"
+                      maxlength="5"
+                      inputmode="numeric"
+                      placeholder="ZIP code"
+                      [(ngModel)]="adminZipImportCode"
+                    />
+                  </div>
+                </div>
+                <button type="button" class="btn-add-resource btn-add-zip" (click)="importAdminZipResources()" [disabled]="isAdminImportingZip">
+                  {{ isAdminImportingZip ? 'Importing ZIP...' : '+ Add new ZIP' }}
+                </button>
+              </div>
+            </div>
+
+            <div class="admin-messages-scope-row admin-zip-requests-scope-row">
+              <button
+                type="button"
+                class="admin-scope-btn"
+                [class.active]="adminZipRequestsScope === 'active'"
+                (click)="setAdminZipRequestsScope('active')"
+              >
+                Active queue
+              </button>
+              <button
+                type="button"
+                class="admin-scope-btn"
+                [class.active]="adminZipRequestsScope === 'archive'"
+                (click)="setAdminZipRequestsScope('archive')"
+              >
+                Archive (user cancelled)
+              </button>
+            </div>
+            @if (adminZipRequestsScope === 'archive') {
+              <p class="admin-panel-note">Requests members cancelled before admin action. They stay here for your records.</p>
+            }
+
+            @if (isAdminImportingZip) {
+              <div class="admin-import-progress-wrap" role="status" aria-live="polite">
+                <div class="admin-import-progress-head">
+                  <span>Importing resources for ZIP {{ adminZipImportCode }}...</span>
+                  <span>{{ adminZipImportProgress }}%</span>
+                </div>
+                <div class="admin-import-progress-track">
+                  <div class="admin-import-progress-fill" [style.width.%]="adminZipImportProgress"></div>
+                </div>
+                <p class="admin-import-progress-meta">Elapsed: {{ adminZipImportElapsedSeconds }}s</p>
+              </div>
+            }
+            @if (adminZipImportError) {
+              <p class="rr-form-error">{{ adminZipImportError }}</p>
+            }
+            @if (adminZipImportSuccess) {
+              <p class="rr-form-success">{{ adminZipImportSuccess }}</p>
+            }
+            @if (adminSubmissionActionError) {
+              <p class="rr-form-error">{{ adminSubmissionActionError }}</p>
+            }
+            @if (adminSubmissionActionMessage) {
+              <p class="rr-form-success">{{ adminSubmissionActionMessage }}</p>
+            }
+            <div class="admin-submission-list">
+              @if (adminZipCodeRequests.length === 0) {
+                <article class="rr-card rr-empty admin-panel-note">
+                  <p>No ZIP code requests yet.</p>
+                </article>
+              } @else if (adminZipRequestsListForScope.length === 0) {
+                <article class="rr-card rr-empty admin-panel-note">
+                  @if (adminZipRequestsScope === 'archive') {
+                    <p>No cancelled requests in the archive.</p>
+                  } @else {
+                    <p>No active ZIP requests. Open <strong>Archive (user cancelled)</strong> if you need cancelled items.</p>
+                  }
+                </article>
+              } @else {
+                @for (item of adminZipRequestsListForScope; track item.id) {
+                    <article class="admin-submission-item admin-zip-request-card">
+                      <div class="admin-zip-request-head">
+                        <div class="admin-zip-request-head-text">
+                          <p class="admin-submission-title">{{ item.zip_or_city }}</p>
+                          <p class="admin-submission-meta">
+                            Submitted by {{ getAdminSubmissionRequesterName(item) }}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          class="admin-zip-request-dismiss"
+                          [disabled]="adminZipSubmissionDeletingId === item.id || adminSubmissionSavingId === item.id"
+                          (click)="deleteAdminZipSubmission(item)"
+                          aria-label="Delete ZIP request"
+                          title="Remove request"
+                        >
+                          ×
+                        </button>
+                      </div>
+                      @if (item.status === 'pending') {
+                        <textarea
+                          rows="2"
+                          class="admin-zip-request-note"
+                          placeholder="Review note (required to reject)"
+                          [ngModel]="getAdminReviewNote(item.id)"
+                          (ngModelChange)="setAdminReviewNote(item.id, $event)"
+                        ></textarea>
+                        <div class="rr-flag-actions admin-zip-request-actions">
+                          <button
+                            type="button"
+                            class="rr-submit-btn btn-add-zip-from-request"
+                            [disabled]="isAdminImportingZip || adminSubmissionSavingId === item.id"
+                            (click)="quickImportAdminZipFromRequest(item)"
+                          >
+                            {{ isAdminImportingZip && adminZipImportCode === item.zip_or_city ? 'Adding ZIP...' : '+ Add ZIP' }}
+                          </button>
+                          <button
+                            type="button"
+                            class="rr-save-btn rr-flag-btn"
+                            [disabled]="adminSubmissionSavingId === item.id || isAdminImportingZip"
+                            (click)="updateAdminSubmissionStatus(item, 'rejected')"
+                          >
+                            {{ adminSubmissionSavingId === item.id ? 'Saving...' : 'Reject' }}
+                          </button>
+                        </div>
+                      }
+                      <span
+                        class="status-pill {{
+                          item.status === 'cancelled'
+                            ? 'status-cancelled'
+                            : getUpdateRequestStatusClass(
+                                item.status === 'rejected' ? 'declined' : item.status === 'approved' ? 'reviewed' : 'pending'
+                              )
+                        }}"
+                      >
+                        {{
+                          item.status === 'cancelled'
+                            ? 'Cancelled by user'
+                            : item.status === 'approved'
+                              ? 'Completed'
+                              : (item.status | titlecase)
+                        }}
+                      </span>
+                      @if (getAdminSubmissionHandledLine(item); as zipHandled) {
+                        <p class="admin-handled-line">{{ zipHandled }}</p>
+                      }
+                      @if (item.review_notes && item.status !== 'pending') {
+                        <p class="admin-review-note-display"><strong>Review note:</strong> {{ item.review_notes }}</p>
+                      }
+                    </article>
+                }
+              }
+            </div>
+          } @else if (adminTab === 'flagged') {
+            <div class="page-title-bar">
+              <p class="page-title">Flagged Resources</p>
+              <span class="page-count">{{ adminPendingFlaggedSubmissions.length }} pending</span>
+            </div>
+            @if (adminSubmissionActionError) {
+              <p class="rr-form-error">{{ adminSubmissionActionError }}</p>
+            }
+            @if (adminSubmissionActionMessage) {
+              <p class="rr-form-success">{{ adminSubmissionActionMessage }}</p>
+            }
+            <div class="admin-submission-list">
+              @if (adminPendingFlaggedSubmissions.length === 0) {
+                <article class="rr-card rr-empty admin-panel-note">
+                  <p>No pending flagged resources right now.</p>
+                </article>
+              } @else {
+                @for (item of adminPendingFlaggedSubmissions; track item.id) {
+                  <article class="admin-submission-item flagged">
+                    <p class="admin-submission-title">{{ item.resource_name || 'Flagged resource' }}</p>
+                    <p class="admin-submission-meta">
+                      {{ item.zip_or_city }} · {{ getAdminSubmissionCategoryLabel(item) }} · Submitted {{ formatChatDate(item.created_at) }}
+                    </p>
+                    <p class="admin-submission-note">{{ getAdminFlagReason(item) }}</p>
+                    <div class="rr-flag-actions admin-flag-pending-toolbar">
+                      <button
+                        type="button"
+                        class="rr-save-btn rr-flag-btn"
+                        [disabled]="
+                          adminFlaggedSubmissionDeletingId === item.id ||
+                          adminSubmissionSavingId === item.id ||
+                          isAdminSavingEdit
+                        "
+                        (click)="deleteAdminFlagSubmissionRecord(item)"
+                      >
+                        {{ adminFlaggedSubmissionDeletingId === item.id ? 'Removing…' : 'Dismiss flag' }}
+                      </button>
+                    </div>
+                    @if (getFlaggedSubmissionResource(item); as flaggedResource) {
+                      <button type="button" class="rr-save-btn admin-edit-btn" (click)="openAdminFlaggedResourceEditor(item, flaggedResource)">
+                        Edit flagged resource
+                      </button>
+                    } @else {
+                      <p class="admin-submission-meta">Resource record not found in current admin resource list.</p>
+                    }
+                    @if (adminEditingSubmissionId === item.id) {
+                      <div class="admin-edit-panel" [class.admin-edit-panel--collapsed]="adminEditPanelCollapsed">
+                        <div class="admin-edit-panel-header">
+                          <p class="admin-edit-title">
+                            {{ adminEditPanelCollapsed ? 'Correct flagged resource (minimized)' : 'Correct flagged resource' }}
+                          </p>
+                          <button
+                            type="button"
+                            class="admin-edit-minimize-btn"
+                            (click)="toggleAdminEditPanelCollapsed()"
+                            [attr.aria-expanded]="!adminEditPanelCollapsed"
+                            [attr.aria-label]="adminEditPanelCollapsed ? 'Expand edit form' : 'Minimize edit form'"
+                          >
+                            @if (adminEditPanelCollapsed) {
+                              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                                <path d="M6 9l6 6 6-6" />
+                              </svg>
+                            } @else {
+                              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                                <path d="M5 12h14" />
+                              </svg>
+                            }
+                          </button>
+                        </div>
+                        @if (!adminEditPanelCollapsed) {
+                          <div class="admin-edit-grid">
+                            <input type="text" [(ngModel)]="adminEditForm.name" placeholder="Resource name" />
+                            <input type="text" [(ngModel)]="adminEditForm.address" placeholder="Address" />
+                            <input type="text" [(ngModel)]="adminEditForm.city" placeholder="City" />
+                            <input type="text" [(ngModel)]="adminEditForm.state" placeholder="State" />
+                            <input type="text" [(ngModel)]="adminEditForm.zipCode" placeholder="ZIP code" />
+                            <input type="text" [(ngModel)]="adminEditForm.phoneNumber" placeholder="Phone number" />
+                            <input type="text" [(ngModel)]="adminEditForm.hoursOfOperation" placeholder="Hours of operation" />
+                            <input type="text" [(ngModel)]="adminEditForm.website" placeholder="Website" />
+                            <label class="admin-edit-check">
+                              <input type="checkbox" [(ngModel)]="adminEditForm.isVerified" />
+                              Verified listing
+                            </label>
+                          </div>
+                          @if (adminEditError) {
+                            <p class="rr-form-error">{{ adminEditError }}</p>
+                          }
+                          @if (adminEditSuccess) {
+                            <p class="rr-form-success">{{ adminEditSuccess }}</p>
+                          }
+                          @if (getFlaggedSubmissionResource(item); as flaggedResourceForSave) {
+                            <div class="rr-flag-actions">
+                              <button
+                                type="button"
+                                class="rr-submit-btn"
+                                [disabled]="isAdminSavingEdit || adminSubmissionSavingId === item.id"
+                                (click)="submitFlaggedCorrection(item, flaggedResourceForSave.id)"
+                              >
+                                {{ isAdminSavingEdit || adminSubmissionSavingId === item.id ? 'Saving...' : 'Submit corrected' }}
+                              </button>
+                              <button type="button" class="rr-save-btn" (click)="cancelAdminResourceEdit()">Cancel</button>
+                            </div>
+                          }
+                        } @else {
+                          <p class="admin-edit-collapsed-hint">Form minimized — expand to save or submit corrected.</p>
+                          <div class="rr-flag-actions admin-edit-collapsed-actions">
+                            <button type="button" class="rr-save-btn" (click)="cancelAdminResourceEdit()">Cancel editing</button>
+                          </div>
+                        }
+                      </div>
+                    }
+                  </article>
+                }
+              }
+            </div>
+            @if (adminCompletedFlaggedSubmissions.length > 0) {
+              <div class="admin-completed-section">
+                <p class="admin-completed-heading">Completed &amp; declined</p>
+                <div class="admin-submission-list">
+                  @for (item of adminCompletedFlaggedSubmissions; track item.id) {
+                    <article class="admin-submission-item flagged admin-submission-item--readonly">
+                      <div class="admin-completed-flag-head">
+                        <div class="admin-completed-flag-head-text">
+                          <p class="admin-submission-title">{{ item.resource_name || 'Flagged resource' }}</p>
+                          <p class="admin-submission-meta">
+                            {{ item.zip_or_city }} · {{ getAdminSubmissionCategoryLabel(item) }} · Submitted {{ formatChatDate(item.created_at) }}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          class="admin-flag-completed-delete"
+                          [disabled]="adminFlaggedSubmissionDeletingId === item.id || adminSubmissionSavingId === item.id"
+                          (click)="deleteAdminFlagSubmissionRecord(item)"
+                          aria-label="Dismiss flag"
+                          title="Remove this flag request only; the listing stays in the directory"
+                        >
+                          {{ adminFlaggedSubmissionDeletingId === item.id ? '…' : 'Dismiss flag' }}
+                        </button>
+                      </div>
+                      <p class="admin-submission-note">{{ getAdminFlagReason(item) }}</p>
+                      @if (getAdminSubmissionHandledLine(item); as fh) {
+                        <p class="admin-handled-line">{{ fh }}</p>
+                      }
+                      @if (item.review_notes) {
+                        <p class="admin-review-note-display"><strong>Review note:</strong> {{ item.review_notes }}</p>
+                      }
+                      <span class="status-pill {{ getUpdateRequestStatusClass(item.status === 'rejected' ? 'declined' : item.status === 'approved' ? 'reviewed' : 'pending') }}">
+                        {{ item.status === 'approved' ? 'Approved' : (item.status | titlecase) }}
+                      </span>
+                    </article>
+                  }
+                </div>
+              </div>
+            }
+          } @else if (adminTab === 'accounts') {
+            <div class="page-title-bar">
+              <p class="page-title">Accounts</p>
+              <span class="page-count">{{ adminUserCount }} regular users</span>
+            </div>
+            @if (adminUserActionError) {
+              <p class="rr-form-error">{{ adminUserActionError }}</p>
+            }
+            @if (adminUserActionMessage) {
+              <p class="rr-form-success">{{ adminUserActionMessage }}</p>
+            }
+            <div class="admin-submission-list">
+              @if (adminUsers.length === 0) {
+                <article class="rr-card rr-empty admin-panel-note">
+                  <p>No regular user accounts found.</p>
+                </article>
+              } @else {
+                @for (user of adminUsers; track user.id) {
+                  <article class="admin-submission-item">
+                    <p class="admin-submission-title">{{ getAdminUserDisplayName(user) }}</p>
+                    <p class="admin-submission-meta">{{ user.email }}</p>
+                    <div class="rr-flag-actions">
+                      <button type="button" class="rr-save-btn" (click)="toggleAdminUserDetails(user.id)">
+                        {{ adminExpandedUserId === user.id ? 'Hide info' : 'View info' }}
+                      </button>
+                      <button
+                        type="button"
+                        class="rr-save-btn rr-flag-btn"
+                        [disabled]="adminUserDeletingId === user.id"
+                        (click)="openAdminDeleteUserModal(user)"
+                      >
+                        {{ adminUserDeletingId === user.id ? 'Deleting...' : 'Delete user' }}
+                      </button>
+                    </div>
+                    @if (adminExpandedUserId === user.id) {
+                      <div class="admin-user-info">
+                        <p><strong>First name:</strong> {{ user.first_name || 'Not set' }}</p>
+                        <p><strong>Last name:</strong> {{ user.last_name || 'Not set' }}</p>
+                        <p><strong>Email:</strong> {{ user.email }}</p>
+                        <p><strong>Role:</strong> Regular user</p>
+                        <p><strong>Email verified:</strong> {{ user.is_verified ? 'Yes' : 'No' }}</p>
+                        <p><strong>Created:</strong> {{ formatAdminAccountDate(user.created_at) }}</p>
+                        <p><strong>Last updated:</strong> {{ formatAdminAccountDate(user.updated_at) }}</p>
+                      </div>
+                    }
+                  </article>
+                }
+              }
+            </div>
+          } @else if (adminTab === 'settings') {
+            <div class="page-title-bar">
+              <p class="page-title">Your Account Settings</p>
+              <span class="page-count">Administrator profile</span>
+            </div>
+            @if (adminAccountProfileError) {
+              <p class="rr-form-error">{{ adminAccountProfileError }}</p>
+            }
+            @if (isLoadingAdminAccountProfile) {
+              <article class="rr-card rr-empty admin-panel-note">
+                <p>Loading your account…</p>
+              </article>
+            } @else if (adminAccountProfile) {
+              <article class="rr-card admin-self-profile-card">
+                <div class="admin-self-profile-body">
+                  <p class="admin-self-profile-label">Name</p>
+                  <p class="admin-self-profile-value">{{ adminAccountProfile.name }}</p>
+                  <p class="admin-self-profile-label">Email</p>
+                  <p class="admin-self-profile-value">{{ adminAccountProfile.email }}</p>
+                  <p class="admin-self-profile-label">Account created</p>
+                  <p class="admin-self-profile-value">{{ formatAdminAccountDate(adminAccountProfile.created_at) }}</p>
+                </div>
+              </article>
+            } @else {
+              <article class="rr-card admin-self-profile-card admin-self-profile-fallback">
+                <div class="admin-self-profile-body">
+                  <p class="admin-self-profile-label">Name</p>
+                  <p class="admin-self-profile-value">{{ currentUser?.name || '—' }}</p>
+                  <p class="admin-self-profile-label">Email</p>
+                  <p class="admin-self-profile-value">{{ currentUser?.email || '—' }}</p>
+                  <p class="admin-self-profile-hint">Full profile (including account created date) could not be loaded. Check the API and try again.</p>
+                  <button type="button" class="btn-save admin-profile-retry" (click)="openAdminTab('settings')">Retry load</button>
+                </div>
+              </article>
+            }
+            <div class="delete-zone admin-delete-zone">
+              <p class="delete-title">Delete administrator account</p>
+              <p class="delete-sub">You must enter your password in the next step before the account can be deleted.</p>
+              <button type="button" class="btn-delete" (click)="openDeleteModal()">Delete my account…</button>
+            </div>
+          } @else {
+            <article class="rr-card rr-empty admin-panel-note">
+              <p>Select a section from the sidebar.</p>
+            </article>
+          }
         </div>
-      }
+      </div>
     </section>
   } @else if (viewMode === 'login') {
     <section class="auth-screen">
@@ -1290,18 +2356,9 @@
                   <input [(ngModel)]="suggestionForm.zipOrCity" type="text" placeholder="Zip code or city" />
                 </div>
 
-                <div class="rr-form-row rr-type-row">
-                  @for (category of categories; track category.id) {
-                    <button
-                      type="button"
-                      class="rr-type-choice"
-                      [class.selected]="suggestionForm.categoryId === category.id"
-                      (click)="setSuggestionCategory(category.id)"
-                    >
-                      {{ category.icon }} {{ category.label }}
-                    </button>
-                  }
-                </div>
+                <p class="rr-suggest-all-types-note">
+                  This applies to <strong>all resource types</strong> (food, health, jobs, housing, legal, and government). You do not need to pick a category.
+                </p>
 
                 <textarea [(ngModel)]="suggestionForm.notes" rows="3" placeholder="Anything else admin should know?"></textarea>
 
@@ -1450,5 +2507,85 @@
         </p>
       }
     </section>
+  }
+
+  @if (showAdminDeleteMemberModal && adminDeleteMemberTarget) {
+    <div class="modal-overlay visible">
+      <div class="modal-card">
+        <p class="modal-title">Delete member account?</p>
+        <p class="modal-sub">
+          This removes <strong>{{ getAdminUserDisplayName(adminDeleteMemberTarget) }}</strong> ({{ adminDeleteMemberTarget.email }}). Enter
+          <strong>your</strong> admin password to confirm.
+        </p>
+        <div class="field-input">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9FE1CB" stroke-width="2">
+            <rect x="3" y="11" width="18" height="11" rx="2" />
+            <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+          </svg>
+          <input
+            [type]="showAdminDeleteMemberPassword ? 'text' : 'password'"
+            placeholder="Your admin password"
+            [(ngModel)]="adminDeleteMemberPassword"
+            [disabled]="!!adminUserDeletingId"
+          />
+          <button
+            type="button"
+            class="password-toggle-btn"
+            (click)="showAdminDeleteMemberPassword = !showAdminDeleteMemberPassword"
+            [attr.aria-label]="showAdminDeleteMemberPassword ? 'Hide password' : 'Show password'"
+          >
+            {{ showAdminDeleteMemberPassword ? '🙈' : '👁' }}
+          </button>
+        </div>
+        @if (adminDeleteMemberError) {
+          <p class="rr-form-error">{{ adminDeleteMemberError }}</p>
+        }
+        <div class="modal-row">
+          <button type="button" class="btn-cancel" (click)="closeAdminDeleteUserModal()" [disabled]="!!adminUserDeletingId">
+            Cancel
+          </button>
+          <button
+            type="button"
+            class="btn-confirm-delete"
+            (click)="confirmAdminDeleteUser()"
+            [disabled]="!!adminUserDeletingId"
+          >
+            {{ adminUserDeletingId ? 'Deleting…' : 'Delete member' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  }
+
+  @if (showDeleteModal) {
+    <div class="modal-overlay visible">
+      <div class="modal-card">
+        <p class="modal-title">Delete your account?</p>
+        <p class="modal-sub">{{ getDeleteModalSub() }}</p>
+        <div class="field-input">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9FE1CB" stroke-width="2">
+            <rect x="3" y="11" width="18" height="11" rx="2" />
+            <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+          </svg>
+          <input [type]="showDeletePassword ? 'text' : 'password'" placeholder="Enter your password" [(ngModel)]="deletePassword" />
+          <button
+            type="button"
+            class="password-toggle-btn"
+            (click)="showDeletePassword = !showDeletePassword"
+            [attr.aria-label]="showDeletePassword ? 'Hide password' : 'Show password'"
+          >
+            {{ showDeletePassword ? '🙈' : '👁' }}
+          </button>
+        </div>
+        @if (deleteError) {
+          <p class="rr-form-error">{{ deleteError }}</p>
+        }
+        <div class="modal-warning">{{ getDeleteModalWarning() }}</div>
+        <div class="modal-row">
+          <button type="button" class="btn-cancel" (click)="closeDeleteModal()">Cancel</button>
+          <button type="button" class="btn-confirm-delete" (click)="confirmDeleteAccount()">Yes, delete my account</button>
+        </div>
+      </div>
+    </div>
   }
 </main>

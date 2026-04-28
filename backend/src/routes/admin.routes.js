@@ -7,10 +7,18 @@ const { validateRequest } = require('../middleware/validate');
 const {
   listResources,
   createResource,
+  importZipResources,
   updateResource,
   getResourceAuditLog,
   listResourceSubmissions,
   updateResourceSubmissionStatus,
+  deleteResourceSubmission,
+  listUsers,
+  deleteUser,
+  listUserMessages,
+  createAdminThreadMessage,
+  archiveMessageThread,
+  unarchiveMessageThread,
 } = require('../controllers/admin.controller');
 
 router.use(authRequired, requireRole('admin'));
@@ -27,6 +35,15 @@ router.post(
     validateRequest,
   ],
   createResource
+);
+
+router.post(
+  '/resources/import-zip',
+  [
+    body('zipCode').trim().matches(/^\d{5}$/),
+    validateRequest,
+  ],
+  importZipResources
 );
 
 router.patch(
@@ -53,6 +70,30 @@ router.get(
 
 router.get('/submissions', listResourceSubmissions);
 
+router.get('/messages', listUserMessages);
+
+router.post(
+  '/messages',
+  [
+    body('threadUserId').isUUID(),
+    body('body').trim().isLength({ min: 1, max: 8000 }),
+    validateRequest,
+  ],
+  createAdminThreadMessage
+);
+
+router.post(
+  '/messages/archive',
+  [body('threadUserId').isUUID(), validateRequest],
+  archiveMessageThread
+);
+
+router.post(
+  '/messages/unarchive',
+  [body('threadUserId').isUUID(), validateRequest],
+  unarchiveMessageThread
+);
+
 router.patch(
   '/submissions/:id/status',
   [
@@ -62,6 +103,27 @@ router.patch(
     validateRequest,
   ],
   updateResourceSubmissionStatus
+);
+
+router.delete(
+  '/submissions/:id',
+  [
+    param('id').isUUID(),
+    validateRequest,
+  ],
+  deleteResourceSubmission
+);
+
+router.get('/users', listUsers);
+
+router.delete(
+  '/users/:id',
+  [
+    param('id').isUUID(),
+    body('currentPassword').trim().notEmpty().withMessage('Your admin password is required.'),
+    validateRequest,
+  ],
+  deleteUser
 );
 
 module.exports = router;

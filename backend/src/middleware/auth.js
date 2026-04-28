@@ -16,4 +16,21 @@ function authRequired(req, res, next) {
   }
 }
 
-module.exports = { authRequired };
+function authOptional(req, res, next) {
+  const header = req.headers.authorization || '';
+  const [scheme, token] = header.split(' ');
+
+  if (scheme !== 'Bearer' || !token) {
+    return next();
+  }
+
+  try {
+    req.user = verifyAccessToken(token);
+  } catch {
+    req.user = undefined;
+  }
+
+  return next();
+}
+
+module.exports = { authRequired, authOptional };
