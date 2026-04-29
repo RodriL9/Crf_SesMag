@@ -115,4 +115,4 @@ Detailed handlers live under **`backend/src/routes/`** and **`backend/src/contro
 
 ## License / academic use
 
-Provided for CPS 3500 coursework; adapt licensing if you reuse beyond the course.
+Provided for CPS 3500 coursework; 
