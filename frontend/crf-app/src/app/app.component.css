@@ -3407,6 +3407,17 @@
   margin-bottom: 0.5rem;
 }
 
+.rr-flag-form .rr-flag-contact-input {
+  display: block;
+  width: 100%;
+  border: 1px solid #cfded6;
+  border-radius: 10px;
+  padding: 0.5rem 0.65rem;
+  font-size: 14px;
+  margin-bottom: 0.5rem;
+  box-sizing: border-box;
+}
+
 .rr-flag-actions {
   display: flex;
   gap: 0.45rem;

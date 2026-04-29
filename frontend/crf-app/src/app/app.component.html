@@ -130,8 +130,8 @@
         <div class="crf-privacy-home">
           <span class="crf-privacy-home-icon">🔒</span>
           <p class="crf-privacy-home-text">
-            <strong>PRIVACY NOTICE:</strong> If you are not logged in, this app does <span class="crf-privacy-not-callout">NOT</span> track, does <span class="crf-privacy-not-callout">NOT</span> monitor, and does <span class="crf-privacy-not-callout">NOT</span> collect personal data.
-            Searches are only used to show results on screen. Saved items stay only on this device unless you choose to create account/login.
+            <strong>PRIVACY NOTICE:</strong> If you are not logged in, this app does <span class="crf-privacy-not-callout">NOT</span> track, does <span class="crf-privacy-not-callout">NOT</span> monitor, and does <span class="crf-privacy-not-callout">NOT</span> collect personal data for ads or profiling.
+            Searches are only used to show results on screen. Saved items stay only on this device unless you choose to create account/login. If you flag a listing, your note is sent to administrators for review; you may stay anonymous or add optional contact info in the flag form.
             <span class="crf-privacy-alert">NO ADS. NO DATA SELLING.</span>
           </p>
         </div>
@@ -139,8 +139,8 @@
         <div class="crf-notice">
           <span class="crf-notice-icon">✅</span>
           <p class="crf-notice-text">
-            <strong class="crf-no-account-callout">NO ACCOUNT NEEDED</strong> — browse and find resources freely.
-            Want to submit updates or flag outdated info? An account unlocks those features.
+            <strong class="crf-no-account-callout">NO ACCOUNT NEEDED</strong> — browse, search, save on this device, and flag outdated listings.
+            Want saved resources synced across devices, ZIP area requests, or messaging staff? Create an account or log in.
           </p>
           <div class="crf-notice-actions">
             <button type="button" class="btn-create" (click)="openCreateAccount()">Create an account</button>
@@ -945,9 +945,11 @@
                       <button type="button" class="rr-save-btn" (click)="toggleSaveResource(resource)">
                         {{ isSavedResource(resource.id) ? 'Unsave' : 'Save' }}
                       </button>
-                      <button type="button" class="rr-save-btn rr-flag-btn" (click)="openFlagResource(resource.id)">
-                        Flag resource
-                      </button>
+                      @if (!currentUser || currentUser.role === 'user') {
+                        <button type="button" class="rr-save-btn rr-flag-btn" (click)="openFlagResource(resource.id)">
+                          Flag resource
+                        </button>
+                      }
                       @if (!resource.is_verified) {
                         <button type="button" class="rr-save-btn rr-verify-btn" (click)="verifyResource(resource)">
                           Verify resource
@@ -969,6 +971,16 @@
                         rows="3"
                         placeholder="What is outdated or incorrect about this resource?"
                       ></textarea>
+                      @if (!currentUser) {
+                        <input
+                          type="text"
+                          class="rr-flag-contact-input"
+                          maxlength="255"
+                          [(ngModel)]="guestFlagContact"
+                          placeholder="Optional: email or phone if staff should follow up"
+                          aria-label="Optional contact for flag follow-up"
+                        />
+                      }
                       @if (flagError) {
                         <p class="rr-form-error">{{ flagError }}</p>
                       }
@@ -2237,7 +2249,7 @@
                 <span class="rr-map-link-text">Go to Google Maps</span>
               </a>
               <button type="button" class="rr-save-btn" (click)="toggleSaveResource(resource)">Unsave</button>
-              @if (currentUser?.role === 'user') {
+              @if (!currentUser || currentUser.role === 'user') {
                 <button type="button" class="rr-save-btn rr-flag-btn" (click)="openFlagResource(resource.id)">
                   Flag resource
                 </button>
@@ -2250,6 +2262,16 @@
                   rows="3"
                   placeholder="What is outdated or incorrect about this resource?"
                 ></textarea>
+                @if (!currentUser) {
+                  <input
+                    type="text"
+                    class="rr-flag-contact-input"
+                    maxlength="255"
+                    [(ngModel)]="guestFlagContact"
+                    placeholder="Optional: email or phone if staff should follow up"
+                    aria-label="Optional contact for flag follow-up"
+                  />
+                }
                 @if (flagError) {
                   <p class="rr-form-error">{{ flagError }}</p>
                 }
@@ -2466,7 +2488,7 @@
               <button type="button" class="rr-save-btn" (click)="toggleSaveResource(resource)">
                 {{ isSavedResource(resource.id) ? 'Unsave' : 'Save' }}
               </button>
-              @if (currentUser?.role === 'user') {
+              @if (!currentUser || currentUser.role === 'user') {
                 <button type="button" class="rr-save-btn rr-flag-btn" (click)="openFlagResource(resource.id)">
                   Flag resource
                 </button>
@@ -2479,6 +2501,16 @@
                   rows="3"
                   placeholder="What is outdated or incorrect about this resource?"
                 ></textarea>
+                @if (!currentUser) {
+                  <input
+                    type="text"
+                    class="rr-flag-contact-input"
+                    maxlength="255"
+                    [(ngModel)]="guestFlagContact"
+                    placeholder="Optional: email or phone if staff should follow up"
+                    aria-label="Optional contact for flag follow-up"
+                  />
+                }
                 @if (flagError) {
                   <p class="rr-form-error">{{ flagError }}</p>
                 }

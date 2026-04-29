@@ -1,47 +1,68 @@
-# Dependencies
+# https://docs.github.com/get-started/getting-started-with-git/ignoring-files
+
+# --- Dependencies ---
 node_modules/
 **/node_modules/
 
-# Build output
+# --- Build output ---
 dist/
 **/dist/
 build/
 **/build/
+tmp/
+out-tsc/
+**/out-tsc/
+bazel-out/
 
-# Env / secrets
+# --- Environment / secrets ---
 .env
 .env.*
 !.env.example
 
-# Logs
+# --- Logs ---
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 *.log
-
-# OS / editor
-.DS_Store
-.vscode/
-.idea/
-
-# Angular/TS cache
-.angular/
-.cache/
-*.tsbuildinfo
-tmp/
-out-tsc/
-bazel-out/
-.sass-cache/
-connect.lock
 libpeerconnection.log
 testem.log
-typings/
-Thumbs.db
 
-# Coverage
+# --- IDEs / editors ---
+.idea/
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
+# Ignore entire VS Code folder (combine with project policy)
+.vscode/
+**/.vscode/
+.history/
+
+# --- Angular / TypeScript ---
+.angular/
+**/.angular/
+.cache/
+*.tsbuildinfo
+.sass-cache/
+connect.lock
+
+# Karma / tooling
 coverage/
 **/coverage/
 
+# Legacy typing folder (if created)
+typings/
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+
+# --- Frontend (optional local-only files; main global styles remain src/styles.css) ---
+**/src/assets/styles.css
+
+# --- Local docs (not tracked) ---
 docs/
 **/docs/

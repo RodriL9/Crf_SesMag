@@ -275,6 +275,8 @@ export class AppComponent implements OnInit, OnDestroy {
   flaggingResourceId: string | null = null;
   expandedFlaggedResourceId: string | null = null;
   flagReason = '';
+  /** Optional email or phone for anonymous flag follow-up (never required). */
+  guestFlagContact = '';
   flagError = '';
   flagSuccess = '';
   verifyRequestResourceId: string | null = null;
@@ -2534,6 +2536,7 @@ export class AppComponent implements OnInit, OnDestroy {
   openFlagResource(resourceId: string): void {
     this.flaggingResourceId = resourceId;
     this.flagReason = '';
+    this.guestFlagContact = '';
     this.flagError = '';
     this.flagSuccess = '';
   }
@@ -2541,6 +2544,7 @@ export class AppComponent implements OnInit, OnDestroy {
   cancelFlagResource(): void {
     this.flaggingResourceId = null;
     this.flagReason = '';
+    this.guestFlagContact = '';
     this.flagError = '';
     this.flagSuccess = '';
   }
@@ -2549,8 +2553,8 @@ export class AppComponent implements OnInit, OnDestroy {
     this.flagError = '';
     this.flagSuccess = '';
 
-    if (!this.currentUser) {
-      this.flagError = 'Please log in as a user to flag resources.';
+    if (this.currentUser?.role === 'admin') {
+      this.flagError = 'Use the admin dashboard to correct listings.';
       return;
     }
 
@@ -2567,16 +2571,38 @@ export class AppComponent implements OnInit, OnDestroy {
     }
 
     const zipOrCity = resource.zip_code || resource.city || this.lastSearchTerm || 'Unknown area';
+    const notes = this.currentUser
+      ? `FLAGGED RESOURCE (${resource.id}) by ${this.currentUser.email}: ${reason}`
+      : `FLAGGED RESOURCE (${resource.id}) (guest): ${reason}`;
+
+    const body: {
+      zipOrCity: string;
+      categoryId: number;
+      resourceName: string;
+      notes: string;
+      submitterContact?: string;
+    } = {
+      zipOrCity,
+      categoryId,
+      resourceName: resource.name,
+      notes,
+    };
+
+    if (!this.currentUser) {
+      const contact = this.guestFlagContact.trim();
+      if (contact) {
+        body.submitterContact = contact.slice(0, 255);
+      }
+    }
+
+    const requestOptions =
+      this.currentUser && this.authToken ? { headers: this.getAuthHeaders() } : {};
+
     this.http
       .post<{ message: string; submission?: { id: string; status: 'pending' | 'approved' | 'rejected'; created_at: string } }>(
         `${this.apiBaseUrl}/submissions`,
-        {
-        zipOrCity,
-        categoryId,
-        resourceName: resource.name,
-        notes: `FLAGGED RESOURCE (${resource.id}) by ${this.currentUser.email}: ${reason}`,
-        },
-        { headers: this.getAuthHeaders() }
+        body,
+        requestOptions
       )
       .subscribe({
         next: (response) => {
@@ -2596,8 +2622,9 @@ export class AppComponent implements OnInit, OnDestroy {
 
           this.flagSuccess = 'Flag sent for admin review. Thank you.';
           this.flagReason = '';
+          this.guestFlagContact = '';
           this.flaggingResourceId = null;
-          if (this.viewMode === 'userDashboard') {
+          if (this.viewMode === 'userDashboard' && this.currentUser?.role === 'user') {
             this.dashboardTab = 'flagged';
           }
         },
